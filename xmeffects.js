@@ -51,6 +51,10 @@ function eff_t1_3(ch) {  // portamento
     } else {
       ch.period = Math.min(ch.periodtarget, ch.period + ch.portaspeed);
     }
+    if (ch.glissando) {
+      // round to nearest semitone (16 period units per semitone)
+      ch.periodoffset = Math.round(ch.period / 16) * 16 - ch.period;
+    }
   }
 }
 
@@ -173,6 +177,9 @@ function eff_t0_e(ch, data) {  // extended effects!
       break;
     case 2:  // fine porta down
       ch.period += data;
+      break;
+    case 3:  // glissando control
+      ch.glissando = data;
       break;
     case 4:  // set vibrato waveform
       ch.vibratotype = data & 0x07;
