@@ -329,6 +329,14 @@ function eff_t1_p(ch) {  // panning slide
   }
 }
 
+function eff_t0_x(ch, data) {  // extra fine portamento
+  if ((data >> 4) === 1) {  // X1x - extra fine porta up
+    ch.period -= data & 0x0f;
+  } else if ((data >> 4) === 2) {  // X2x - extra fine porta down
+    ch.period += data & 0x0f;
+  }
+}
+
 function eff_unimplemented() {}
 function eff_unimplemented_t0(ch, data) {
   console.log("unimplemented effect", player.prettify_effect(ch.effect, data));
@@ -368,7 +376,7 @@ player.effects_t0 = [  // effect functions on tick 0
   eff_unimplemented_t0,  // u
   eff_unimplemented_t0,  // v
   eff_unimplemented_t0,  // w
-  eff_unimplemented_t0,  // x
+  eff_t0_x,  // x
   eff_unimplemented_t0,  // y
   eff_unimplemented_t0,  // z
 ];
