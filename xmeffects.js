@@ -337,6 +337,12 @@ function eff_t0_x(ch, data) {  // extra fine portamento
   }
 }
 
+function eff_t1_k(ch) {  // key off at tick
+  if (player.cur_tick === ch.effectdata) {
+    ch.release = 1;
+  }
+}
+
 function eff_unimplemented() {}
 function eff_unimplemented_t0(ch, data) {
   console.log("unimplemented effect", player.prettify_effect(ch.effect, data));
@@ -363,7 +369,7 @@ player.effects_t0 = [  // effect functions on tick 0
   eff_t0_h,  // h
   eff_unimplemented_t0,  // i
   eff_unimplemented_t0,  // j
-  eff_unimplemented_t0,  // k
+  null,  // k
   eff_unimplemented_t0,  // l
   eff_unimplemented_t0,  // m
   eff_unimplemented_t0,  // n
@@ -402,7 +408,7 @@ player.effects_t1 = [  // effect functions on tick 1+
   eff_t1_h,  // h
   eff_unimplemented,  // i
   eff_unimplemented,  // j
-  eff_unimplemented,  // k
+  eff_t1_k,  // k
   eff_unimplemented,  // l
   eff_unimplemented,  // m
   eff_unimplemented,  // n
