@@ -367,8 +367,19 @@ function nextTick() {
     ch.voloffset = 0;
   }
   if (player.cur_tick >= player.xm.tempo) {
-    player.cur_tick = 0;
-    nextRow();
+    if (player.patterndelay !== undefined) {
+      if (player.patterndelay > 0) {
+        player.patterndelay--;
+        player.cur_tick = 0;
+      } else {
+        player.patterndelay = undefined;
+        player.cur_tick = 0;
+        nextRow();
+      }
+    } else {
+      player.cur_tick = 0;
+      nextRow();
+    }
   }
   for (j = 0; j < player.xm.nchan; j++) {
     ch = player.xm.channelinfo[j];

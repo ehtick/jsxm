@@ -231,6 +231,11 @@ function eff_t0_e(ch, data) {  // extended effects!
       break;
     case 0x0d:  // note delay - handled in eff_t1_e and nextRow
       break;
+    case 0x0e:  // pattern delay
+      if (player.patterndelay === undefined) {
+        player.patterndelay = data;
+      }
+      break;
     default:
       console.log("unimplemented extended effect E", ch.effectdata.toString(16));
       break;
