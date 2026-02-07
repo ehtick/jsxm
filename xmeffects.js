@@ -96,6 +96,24 @@ function getVibratoDelta(type, x) {
   return delta;
 }
 
+function eff_t0_7(ch, data) {  // tremolo
+  if (data & 0x0f) {
+    ch.tremolodepth = data & 0x0f;
+  }
+  if (data >> 4) {
+    ch.tremolospeed = data >> 4;
+  }
+  eff_t1_7(ch);
+}
+
+function eff_t1_7(ch) {  // tremolo
+  ch.voloffset = getVibratoDelta(ch.tremolotype, ch.tremolopos) * ch.tremolodepth;
+  if (player.cur_tick > 0) {
+    ch.tremolopos += ch.tremolospeed;
+    ch.tremolopos &= 63;
+  }
+}
+
 function eff_t1_5(ch) {  // portamento + volume slide
   eff_t1_a(ch);
   eff_t1_3(ch);
@@ -290,7 +308,7 @@ player.effects_t0 = [  // effect functions on tick 0
   eff_t0_4,  // 4
   eff_t0_a,  // 5, same as A on first tick
   eff_t0_a,  // 6, same as A on first tick
-  eff_unimplemented_t0,  // 7
+  eff_t0_7,  // 7
   eff_t0_8,  // 8
   eff_t0_9,  // 9
   eff_t0_a,  // a
@@ -329,7 +347,7 @@ player.effects_t1 = [  // effect functions on tick 1+
   eff_t1_4,
   eff_t1_5,  // 5
   eff_t1_6,  // 6
-  eff_unimplemented,  // 7
+  eff_t1_7,  // 7
   null,   // 8
   null,   // 9
   eff_t1_a,  // a

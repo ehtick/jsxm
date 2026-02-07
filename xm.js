@@ -335,6 +335,7 @@ function nextTick() {
   for (j = 0; j < player.xm.nchan; j++) {
     ch = player.xm.channelinfo[j];
     ch.periodoffset = 0;
+    ch.voloffset = 0;
   }
   if (player.cur_tick >= player.xm.tempo) {
     player.cur_tick = 0;
@@ -414,8 +415,9 @@ function MixChannelIntoBuf(ch, start, end, dataL, dataR) {
   var volE = ch.volE / 64.0;    // current volume envelope
   var panE = 4*(ch.panE - 32);  // current panning envelope
   var p = panE + ch.pan - 128;  // final pan
-  var volL = player.xm.global_volume * volE * (128 - p) * ch.vol / (64 * 128 * 128);
-  var volR = player.xm.global_volume * volE * (128 + p) * ch.vol / (64 * 128 * 128);
+  var vol = Math.max(0, Math.min(64, ch.vol + ch.voloffset));
+  var volL = player.xm.global_volume * volE * (128 - p) * vol / (64 * 128 * 128);
+  var volR = player.xm.global_volume * volE * (128 + p) * vol / (64 * 128 * 128);
   if (volL < 0) volL = 0;
   if (volR < 0) volR = 0;
   if (volR === 0 && volL === 0)
@@ -710,6 +712,11 @@ function load(arrayBuf) {
       vibratodepth: 1,
       vibratospeed: 1,
       vibratotype: 0,
+      tremolopos: 0,
+      tremolodepth: 0,
+      tremolospeed: 0,
+      tremolotype: 0,
+      voloffset: 0,
     });
   }
   console.log("header len " + hlen);
