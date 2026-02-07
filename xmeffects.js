@@ -317,6 +317,18 @@ function eff_t1_r(ch) {
   }
 }
 
+function eff_t0_p(ch, data) {  // panning slide
+  if (data) {
+    ch.panslide = -(data & 0x0f) + (data >> 4);
+  }
+}
+
+function eff_t1_p(ch) {  // panning slide
+  if (ch.panslide !== undefined) {
+    ch.pan = Math.max(0, Math.min(255, ch.pan + ch.panslide));
+  }
+}
+
 function eff_unimplemented() {}
 function eff_unimplemented_t0(ch, data) {
   console.log("unimplemented effect", player.prettify_effect(ch.effect, data));
@@ -348,7 +360,7 @@ player.effects_t0 = [  // effect functions on tick 0
   eff_unimplemented_t0,  // m
   eff_unimplemented_t0,  // n
   eff_unimplemented_t0,  // o
-  eff_unimplemented_t0,  // p
+  eff_t0_p,  // p
   eff_unimplemented_t0,  // q
   eff_t0_r,  // r
   eff_unimplemented_t0,  // s
@@ -387,7 +399,7 @@ player.effects_t1 = [  // effect functions on tick 1+
   eff_unimplemented,  // m
   eff_unimplemented,  // n
   eff_unimplemented,  // o
-  eff_unimplemented,  // p
+  eff_t1_p,  // p
   eff_unimplemented,  // q
   eff_t1_r,  // r
   eff_unimplemented,  // s
