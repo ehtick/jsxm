@@ -551,7 +551,10 @@ function nextTick() {
       avPeriodOffset = (autoVibVal * autoVibAmp) / 65536;
       ch.autovibratopos = (ch.autovibratopos + inst.vib_rate) & 255;
     }
-    updateChannelPeriod(ch, ch.period + ch.periodoffset + avPeriodOffset);
+    var finalPeriod = ch.period + ch.periodoffset + avPeriodOffset;
+    // FT2: clamp period — if >= 32000 (8000 in JS 1/4-scale), set to 0 (silence)
+    if (finalPeriod >= 8000) finalPeriod = 0;
+    updateChannelPeriod(ch, finalPeriod);
   }
 }
 
