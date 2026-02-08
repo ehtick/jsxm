@@ -36,9 +36,7 @@ var _note_names = [
 
 var f_smp = 44100;  // updated by play callback, default value here
 
-// per-sample exponential moving average for volume changes (to prevent pops
-// and clicks); evaluated every 8 samples
-var popfilter_alpha = 0.9837;
+var quickRampSamples = Math.round(f_smp / 200);  // ~5ms crossfade
 
 function prettify_note(note) {
   if (note < 0) return "---";
@@ -276,6 +274,18 @@ function nextRow() {
     }
 
     if (triggernote) {
+      // snapshot old voice for crossfade
+      if (ch.inst && ch.samp && ch.vL + ch.vR > 0) {
+        ch.fadeVoice = {
+          inst: ch.inst, samp: ch.samp,
+          off: ch.off, doff: ch.doff,
+          vL: ch.vL, vR: ch.vR,
+          volDeltaL: -ch.vL / quickRampSamples,
+          volDeltaR: -ch.vR / quickRampSamples,
+          rampSamplesLeft: quickRampSamples,
+          lastSample: ch.lastSample,
+        };
+      }
       // there's gotta be a less hacky way to handle offset commands...
       if (ch.effect != 9) ch.off = 0;
       ch.release = 0;
@@ -292,6 +302,9 @@ function nextRow() {
       }
       ch.autovibratopos = 0;
       ch.autovibratosweep = 0;
+      // new voice ramps up from zero
+      ch.vL = 0; ch.vR = 0;
+      ch.rampSamplesLeft = 0;
     }
   }
 }
@@ -301,6 +314,18 @@ function triggerNote(ch) {
   if (!d || !d.triggernote) return;
   var inst = d.inst;
   if (!inst || !inst.samplemap) return;
+  // snapshot old voice for crossfade
+  if (ch.inst && ch.samp && ch.vL + ch.vR > 0) {
+    ch.fadeVoice = {
+      inst: ch.inst, samp: ch.samp,
+      off: ch.off, doff: ch.doff,
+      vL: ch.vL, vR: ch.vR,
+      volDeltaL: -ch.vL / quickRampSamples,
+      volDeltaR: -ch.vR / quickRampSamples,
+      rampSamplesLeft: quickRampSamples,
+      lastSample: ch.lastSample,
+    };
+  }
   if (ch.effect != 9) ch.off = 0;
   ch.release = 0;
   ch.envtick = 0;
@@ -315,6 +340,9 @@ function triggerNote(ch) {
   }
   ch.autovibratopos = 0;
   ch.autovibratosweep = 0;
+  // new voice ramps up from zero
+  ch.vL = 0; ch.vR = 0;
+  ch.rampSamplesLeft = 0;
 }
 player.triggerNote = triggerNote;
 
@@ -424,6 +452,7 @@ function nextTick() {
 // This function gradually brings the channel back down to zero if it isn't
 // already to avoid clicks and pops when samples end.
 function MixSilenceIntoBuf(ch, start, end, dataL, dataR) {
+  var decay = 0.9837;
   var s = ch.lastSample;
   if (isNaN(s)) return;
   for (var i = start; i < end; i++) {
@@ -433,7 +462,7 @@ function MixSilenceIntoBuf(ch, start, end, dataL, dataR) {
     }
     dataL[i] += s * ch.vL;
     dataR[i] += s * ch.vR;
-    s *= popfilter_alpha;
+    s *= decay;
   }
   ch.lastSample = s;
   return 0;
@@ -478,11 +507,12 @@ function MixChannelIntoBuf(ch, start, end, dataL, dataR) {
   var dk = ch.doff;
   var Vrms = 0;
 
-  var vL = popfilter_alpha * ch.vL + (1 - popfilter_alpha) * (volL + ch.vLprev) * 0.5;
-  var vR = popfilter_alpha * ch.vR + (1 - popfilter_alpha) * (volR + ch.vRprev) * 0.5;
-  var pf_8 = Math.pow(popfilter_alpha, 8);
-  ch.vLprev = volL;
-  ch.vRprev = volR;
+  // linear per-sample volume ramp (tick-length)
+  var ticklen = end - start;
+  var vL = ch.vL;
+  var vR = ch.vR;
+  var volDeltaL = (volL - vL) / ticklen;
+  var volDeltaR = (volR - vR) / ticklen;
 
   var i = start;
   var failsafe = 100;
@@ -494,6 +524,7 @@ function MixChannelIntoBuf(ch, start, end, dataL, dataR) {
       } else {
         ch.inst = undefined;
         ch.lastSample = samp[(k|0)] || 0;
+        ch.vL = vL; ch.vR = vR;
         return Vrms + MixSilenceIntoBuf(ch, i, end, dataL, dataR);
       }
     }
@@ -503,41 +534,95 @@ function MixChannelIntoBuf(ch, start, end, dataL, dataR) {
     var ki, kf, s;
     for (; i + 7 < next_event; i+=8) {
       ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
-      dataL[i]+=vL*s; dataR[i]+=vR*s; Vrms+=(vL+vR)*s*s;
+      dataL[i]+=vL*s; dataR[i]+=vR*s; Vrms+=(vL+vR)*s*s; vL+=volDeltaL; vR+=volDeltaR;
       ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
-      dataL[i+1]+=vL*s; dataR[i+1]+=vR*s; Vrms+=(vL+vR)*s*s;
+      dataL[i+1]+=vL*s; dataR[i+1]+=vR*s; Vrms+=(vL+vR)*s*s; vL+=volDeltaL; vR+=volDeltaR;
       ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
-      dataL[i+2]+=vL*s; dataR[i+2]+=vR*s; Vrms+=(vL+vR)*s*s;
+      dataL[i+2]+=vL*s; dataR[i+2]+=vR*s; Vrms+=(vL+vR)*s*s; vL+=volDeltaL; vR+=volDeltaR;
       ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
-      dataL[i+3]+=vL*s; dataR[i+3]+=vR*s; Vrms+=(vL+vR)*s*s;
+      dataL[i+3]+=vL*s; dataR[i+3]+=vR*s; Vrms+=(vL+vR)*s*s; vL+=volDeltaL; vR+=volDeltaR;
       ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
-      dataL[i+4]+=vL*s; dataR[i+4]+=vR*s; Vrms+=(vL+vR)*s*s;
+      dataL[i+4]+=vL*s; dataR[i+4]+=vR*s; Vrms+=(vL+vR)*s*s; vL+=volDeltaL; vR+=volDeltaR;
       ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
-      dataL[i+5]+=vL*s; dataR[i+5]+=vR*s; Vrms+=(vL+vR)*s*s;
+      dataL[i+5]+=vL*s; dataR[i+5]+=vR*s; Vrms+=(vL+vR)*s*s; vL+=volDeltaL; vR+=volDeltaR;
       ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
-      dataL[i+6]+=vL*s; dataR[i+6]+=vR*s; Vrms+=(vL+vR)*s*s;
+      dataL[i+6]+=vL*s; dataR[i+6]+=vR*s; Vrms+=(vL+vR)*s*s; vL+=volDeltaL; vR+=volDeltaR;
       ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
-      dataL[i+7]+=vL*s; dataR[i+7]+=vR*s; Vrms+=(vL+vR)*s*s;
-      vL = pf_8*vL + (1-pf_8)*volL;
-      vR = pf_8*vR + (1-pf_8)*volR;
+      dataL[i+7]+=vL*s; dataR[i+7]+=vR*s; Vrms+=(vL+vR)*s*s; vL+=volDeltaL; vR+=volDeltaR;
     }
 
     for (; i < next_event; i++) {
       ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf;
       dataL[i]+=vL*s; dataR[i]+=vR*s;
       Vrms+=(vL+vR)*s*s;
+      vL+=volDeltaL; vR+=volDeltaR;
       k+=dk;
     }
   }
   ch.off = k;
   ch.lastSample = s;
-  ch.vL = vL;
-  ch.vR = vR;
+  // snap to target to avoid float drift
+  ch.vL = volL;
+  ch.vR = volR;
   return Vrms * 0.5;
+}
+
+function MixFadeVoiceIntoBuf(fv, start, end, dataL, dataR) {
+  var instsamp = fv.samp;
+  var loop = false;
+  var looplen = 0, loopstart = 0;
+
+  var samp = instsamp.sampledata;
+  var sample_end = instsamp.len;
+  if ((instsamp.type & 3) == 1 && instsamp.looplen > 0) {
+    loop = true;
+    loopstart = instsamp.loop;
+    looplen = instsamp.looplen;
+    sample_end = loopstart + looplen;
+  }
+
+  var k = fv.off;
+  var dk = fv.doff;
+  var vL = fv.vL;
+  var vR = fv.vR;
+  var volDeltaL = fv.volDeltaL;
+  var volDeltaR = fv.volDeltaR;
+  var rampLeft = fv.rampSamplesLeft;
+
+  var i = start;
+  var failsafe = 100;
+  while (i < end && rampLeft > 0) {
+    if (failsafe-- === 0) break;
+    if (k >= sample_end) {
+      if (loop) {
+        k = loopstart + (k - loopstart) % looplen;
+      } else {
+        rampLeft = 0;
+        break;
+      }
+    }
+    var segEnd = Math.min(end, i + rampLeft);
+    var next_event = Math.max(1, Math.min(segEnd, i + (sample_end - k) / dk));
+
+    var ki, kf, s;
+    for (; i < next_event; i++) {
+      ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf;
+      dataL[i]+=vL*s; dataR[i]+=vR*s;
+      vL+=volDeltaL; vR+=volDeltaR;
+      k+=dk;
+      rampLeft--;
+    }
+  }
+
+  fv.off = k;
+  fv.vL = vL;
+  fv.vR = vR;
+  fv.rampSamplesLeft = rampLeft;
 }
 
 function audio_cb(e) {
   f_smp = player.audioctx.sampleRate;
+  quickRampSamples = Math.round(f_smp / 200);
   var time_sound_started;
   var buflen = e.outputBuffer.length;
   var dataL = e.outputBuffer.getChannelData(0);
@@ -570,9 +655,13 @@ function audio_cb(e) {
         }
       }
 
-      VU[j] = MixChannelIntoBuf(
-          player.xm.channelinfo[j], offset, offset + tickduration, dataL, dataR) /
+      var ch = player.xm.channelinfo[j];
+      VU[j] = MixChannelIntoBuf(ch, offset, offset + tickduration, dataL, dataR) /
         tickduration;
+      if (ch.fadeVoice) {
+        MixFadeVoiceIntoBuf(ch.fadeVoice, offset, offset + tickduration, dataL, dataR);
+        if (ch.fadeVoice.rampSamplesLeft <= 0) ch.fadeVoice = null;
+      }
 
       if (tickduration >= 4*scopewidth) {
         for (k = 0; k < scopewidth; k++) {
@@ -683,7 +772,8 @@ function load(arrayBuf) {
       pan: 128,
       period: 1920 - 48*16,
       vL: 0, vR: 0,   // left right volume envelope followers (changes per sample)
-      vLprev: 0, vRprev: 0,
+      rampSamplesLeft: 0,
+      fadeVoice: null,
       mute: 0,
       volE: 0, panE: 0,
       fadeOutVol: 32768,
