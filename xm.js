@@ -163,6 +163,10 @@ function nextRow() {
     var ch = player.xm.channelinfo[i];
     var inst = ch.inst;
     var triggernote = false;
+
+    // FT2: detect note delay (EDx) early — it suppresses all tick-0 processing
+    var isNoteDelay = (r[i][3] == 14 && r[i][4] >= 0xd1 && r[i][4] <= 0xdf);
+
     // instrument trigger
     var instrumentOnly = false;
     if (r[i][1] != -1) {
@@ -186,7 +190,7 @@ function nextRow() {
           var note = r[i][0];
           ch.note = note;
           ch.samp = inst.samples[inst.samplemap[ch.note]];
-          if (instrumentOnly) {
+          if (instrumentOnly && !isNoteDelay) {
             // instrument + note: reset vol/pan using the (potentially) new sample
             ch.pan = ch.samp.pan;
             ch.vol = ch.samp.vol;
@@ -201,7 +205,7 @@ function nextRow() {
     // FT2: instrument-only row (no note) resets envelopes/vol/pan but does NOT
     // restart the voice — sample position continues from where it was.
     // Vol/pan are restored from the current (old) sample's initial values.
-    if (instrumentOnly) {
+    if (instrumentOnly && !isNoteDelay) {
       if (ch.samp) {
         ch.vol = ch.samp.vol;
         ch.pan = ch.samp.pan;
@@ -232,7 +236,7 @@ function nextRow() {
       if (v < 0x10) {
         // invalid volume column byte, ignore
       } else if (v <= 0x50) {
-        ch.vol = v - 0x10;
+        if (!isNoteDelay) ch.vol = v - 0x10;
       } else if (v >= 0x60 && v < 0x70) {  // volume slide down
         ch.voleffectfn = function(ch) {
           ch.vol = Math.max(0, ch.vol - ch.voleffectdata);
@@ -242,16 +246,16 @@ function nextRow() {
           ch.vol = Math.min(64, ch.vol + ch.voleffectdata);
         };
       } else if (v >= 0x80 && v < 0x90) {  // fine volume slide down
-        ch.vol = Math.max(0, ch.vol - (v & 0x0f));
+        if (!isNoteDelay) ch.vol = Math.max(0, ch.vol - (v & 0x0f));
       } else if (v >= 0x90 && v < 0xa0) {  // fine volume slide up
-        ch.vol = Math.min(64, ch.vol + (v & 0x0f));
+        if (!isNoteDelay) ch.vol = Math.min(64, ch.vol + (v & 0x0f));
       } else if (v >= 0xa0 && v < 0xb0) {  // vibrato speed
-        if (v & 0x0f) ch.vibratospeed = v & 0x0f;
+        if (!isNoteDelay && (v & 0x0f)) ch.vibratospeed = v & 0x0f;
       } else if (v >= 0xb0 && v < 0xc0) {  // vibrato w/ depth
-        if (v & 0x0f) ch.vibratodepth = (v & 0x0f) * 2;
+        if (!isNoteDelay && (v & 0x0f)) ch.vibratodepth = (v & 0x0f) * 2;
         ch.voleffectfn = player.effects_t1[4];  // use vibrato effect directly
       } else if (v >= 0xc0 && v < 0xd0) {  // set panning
-        ch.pan = (v & 0x0f) << 4;  // FT2: shift left 4, range 0..240
+        if (!isNoteDelay) ch.pan = (v & 0x0f) << 4;
       } else if (v >= 0xd0 && v < 0xe0) {  // panning slide left
         ch.voleffectdata = v & 0x0f;
         ch.voleffectfn = function(ch) {
@@ -282,11 +286,13 @@ function nextRow() {
 
     // EDx note delay: suppress trigger on tick 0, store data for delayed trigger
     // FT2: ED0 is NOT treated as a delay — only ED1-EDF suppress the trigger
-    if (ch.effect == 14 && ch.effectdata >= 0xd1 && ch.effectdata <= 0xdf) {
+    if (isNoteDelay) {
       ch.delaynote = {
         note: ch.note,
         inst: inst,
-        triggernote: triggernote
+        triggernote: triggernote,
+        volColumn: r[i][2],  // FT2 applies set-vol/set-pan during delayed trigger
+        hasInstrument: (r[i][1] != -1)
       };
       triggernote = false;
     }
@@ -428,6 +434,18 @@ function triggerNote(ch) {
   } else {
     ch.autoVibAmp = inst.vib_depth << 8;
     ch.autoVibSweepInc = 0;
+  }
+  // FT2: resetVolumes — restore vol/pan from sample (only when instrument present)
+  if (d.hasInstrument && ch.samp) {
+    ch.vol = ch.samp.vol;
+    ch.pan = ch.samp.pan;
+    ch.fine = ch.samp.fine;
+  }
+  // FT2: apply volume column set-volume/set-panning after delayed trigger
+  if (d.volColumn >= 0x10 && d.volColumn <= 0x50) {
+    ch.vol = d.volColumn - 0x10;
+  } else if (d.volColumn >= 0xc0 && d.volColumn < 0xd0) {
+    ch.pan = (d.volColumn & 0x0f) << 4;
   }
   // new voice ramps up from zero
   ch.vL = 0; ch.vR = 0;
