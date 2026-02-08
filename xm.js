@@ -190,6 +190,7 @@ function nextRow() {
     var ch = player.xm.channelinfo[i];
     var inst = ch.inst;
     var triggernote = false;
+    var hasNewInstrument = false;
 
     // FT2: detect note delay (EDx) early — it suppresses all tick-0 processing
     var isNoteDelay = (r[i][3] == 14 && r[i][4] >= 0xd1 && r[i][4] <= 0xdf);
@@ -200,10 +201,8 @@ function nextRow() {
       inst = player.xm.instruments[r[i][1] - 1];
       if (inst && inst.samplemap) {
         ch.inst = inst;
-        // FT2: instrument-only rows do NOT update ch.samp (smpPtr).
-        // The sample pointer is only updated inside triggerNote().
-        // Vol/pan are restored from the old sample (resetVolumes behavior).
-        instrumentOnly = true;  // may be cleared if a note follows
+        instrumentOnly = true;
+        hasNewInstrument = true;
       }
     }
 
@@ -214,24 +213,74 @@ function nextRow() {
         instrumentOnly = false;
       } else {
         if (inst && inst.samplemap) {
-          var note = r[i][0];
-          ch.note = note;
+          ch.note = r[i][0];
           ch.samp = inst.samples[inst.samplemap[ch.note]];
-          if (instrumentOnly && !isNoteDelay) {
-            // instrument + note: reset vol/pan using the (potentially) new sample
-            ch.pan = ch.samp.pan;
-            ch.vol = ch.samp.vol;
-            ch.fine = ch.samp.fine;
-          }
           triggernote = true;
           instrumentOnly = false;
         }
       }
     }
 
-    // FT2: instrument-only row (no note) resets envelopes/vol/pan but does NOT
-    // restart the voice — sample position continues from where it was.
-    // Vol/pan are restored from the current (old) sample's initial values.
+    // Set effect/effectdata early (needed for portamento/delay checks below)
+    ch.effect = r[i][3];
+    ch.effectdata = r[i][4];
+    if (ch.effect < 36) {
+      ch.effectfn = player.effects_t1[ch.effect];
+    } else {
+      ch.effectfn = undefined;
+    }
+
+    // EDx note delay: store data for delayed trigger, skip tick-0 processing
+    // FT2: ED0 is NOT treated as a delay — only ED1-EDF suppress the trigger
+    if (isNoteDelay) {
+      ch.delaynote = {
+        note: ch.note,
+        inst: inst,
+        triggernote: triggernote,
+        volColumn: r[i][2],
+        hasInstrument: hasNewInstrument
+      };
+      triggernote = false;
+    }
+
+    // FT2: portamento check — BEFORE note trigger (preparePortamento + return)
+    if (ch.effect == 3 || ch.effect == 5 || r[i][2] >= 0xf0) {
+      if (r[i][0] != -1 && r[i][0] != 96) {
+        ch.periodtarget = periodForNote(ch, ch.note);
+      }
+      triggernote = false;
+      if (inst && inst.samplemap) {
+        if (ch.env_vol == undefined) {
+          // note wasn't already playing; ignore portamento and just trigger
+          triggernote = true;
+        } else if (hasNewInstrument && r[i][0] != 96) {
+          // FT2: inst+portamento = resetVolumes + triggerInstrument
+          if (ch.samp) {
+            ch.vol = ch.samp.vol;
+            ch.pan = ch.samp.pan;
+            ch.fine = ch.samp.fine;
+          }
+          ch.release = 0;
+          ch.fadeOutVol = 32768;
+          ch.env_vol = new EnvelopeFollower(inst.env_vol);
+          ch.env_pan = new EnvelopeFollower(inst.env_pan);
+          ch.retrigcounter = 0;
+          if (ch.vibratotype < 4) {
+            ch.vibratopos = 0;
+          }
+          ch.autovibratopos = 0;
+          if (inst.vib_sweep > 0) {
+            ch.autoVibAmp = 0;
+            ch.autoVibSweepInc = ((inst.vib_depth << 8) / inst.vib_sweep) | 0;
+          } else {
+            ch.autoVibAmp = inst.vib_depth << 8;
+            ch.autoVibSweepInc = 0;
+          }
+        }
+      }
+    }
+
+    // FT2: instrument-only row (no note) — resetVolumes + triggerInstrument
     if (instrumentOnly && !isNoteDelay) {
       if (ch.samp) {
         ch.vol = ch.samp.vol;
@@ -242,6 +291,7 @@ function nextRow() {
       ch.fadeOutVol = 32768;
       ch.env_vol = new EnvelopeFollower(inst.env_vol);
       ch.env_pan = new EnvelopeFollower(inst.env_pan);
+      ch.retrigcounter = 0;
       if (ch.vibratotype < 4) {
         ch.vibratopos = 0;
       }
@@ -255,7 +305,67 @@ function nextRow() {
       }
     }
 
+    // FT2 order: triggerNote → resetVolumes → triggerInstrument → THEN effects
+    if (triggernote) {
+      // snapshot old voice for crossfade
+      if (ch.inst && ch.samp && ch.vL + ch.vR > 0) {
+        ch.fadeVoice = {
+          inst: ch.inst, samp: ch.samp,
+          off: ch.off, doff: ch.doff,
+          vL: ch.vL, vR: ch.vR,
+          volDeltaL: -ch.vL / quickRampSamples,
+          volDeltaR: -ch.vR / quickRampSamples,
+          rampSamplesLeft: quickRampSamples,
+          lastSample: ch.lastSample,
+        };
+      }
+      // triggerNote: restart voice
+      // FT2: 9xx sample offset handled inside triggerNote
+      if (ch.effect == 9) {
+        if (ch.effectdata > 0) ch.offsetmemory = ch.effectdata;
+        ch.off = (ch.offsetmemory || 0) * 256;
+      } else {
+        ch.off = 0;
+      }
+      // FT2: E5x (set finetune) handled inside triggerNote, before period calc
+      if (ch.effect == 14 && (ch.effectdata & 0xf0) == 0x50) {
+        ch.fine = ((ch.effectdata & 0x0f) << 4) - 128;
+      } else {
+        ch.fine = ch.samp.fine;
+      }
+      if (ch.note) {
+        ch.period = periodForNote(ch, ch.note);
+      }
+      // resetVolumes + triggerInstrument: only when instrument present on this row
+      if (hasNewInstrument) {
+        ch.vol = ch.samp.vol;
+        ch.pan = ch.samp.pan;
+        ch.release = 0;
+        ch.envtick = 0;
+        ch.fadeOutVol = 32768;
+        ch.env_vol = new EnvelopeFollower(inst.env_vol);
+        ch.env_pan = new EnvelopeFollower(inst.env_pan);
+        ch.retrigcounter = 0;
+        if (ch.vibratotype < 4) {
+          ch.vibratopos = 0;
+        }
+        ch.autovibratopos = 0;
+        if (inst.vib_sweep > 0) {
+          ch.autoVibAmp = 0;
+          ch.autoVibSweepInc = ((inst.vib_depth << 8) / inst.vib_sweep) | 0;
+        } else {
+          ch.autoVibAmp = inst.vib_depth << 8;
+          ch.autoVibSweepInc = 0;
+        }
+      }
+      // new voice ramps up from zero
+      ch.vL = 0; ch.vR = 0;
+      ch.rampSamplesLeft = 0;
+    }
+
+    // handleEffects_TickZero: volume column effects
     ch.voleffectfn = undefined;
+    ch.volColumnVol = r[i][2];  // store raw value for retrig vol override
     ch.hasVolColumn = (r[i][2] != -1);
     if (r[i][2] != -1) {  // volume column
       var v = r[i][2];
@@ -301,103 +411,10 @@ function nextRow() {
       }
     }
 
-    ch.effect = r[i][3];
-    ch.effectdata = r[i][4];
-    if (ch.effect < 36) {
-      ch.effectfn = player.effects_t1[ch.effect];
+    // handleEffects_TickZero: normal effects
+    if (ch.effect < 36 && !isNoteDelay) {
       var eff_t0 = player.effects_t0[ch.effect];
-      if (eff_t0 && eff_t0(ch, ch.effectdata)) {
-        triggernote = false;
-      }
-    }
-
-    // EDx note delay: suppress trigger on tick 0, store data for delayed trigger
-    // FT2: ED0 is NOT treated as a delay — only ED1-EDF suppress the trigger
-    if (isNoteDelay) {
-      ch.delaynote = {
-        note: ch.note,
-        inst: inst,
-        triggernote: triggernote,
-        volColumn: r[i][2],  // FT2 applies set-vol/set-pan during delayed trigger
-        hasInstrument: (r[i][1] != -1)
-      };
-      triggernote = false;
-    }
-
-    // special handling for portamentos: don't trigger the note
-    if (ch.effect == 3 || ch.effect == 5 || r[i][2] >= 0xf0) {
-      if (r[i][0] != -1 && r[i][0] != 96) {
-        ch.periodtarget = periodForNote(ch, ch.note);
-      }
-      triggernote = false;
-      if (inst && inst.samplemap) {
-        if (ch.env_vol == undefined) {
-          // note wasn't already playing; we basically have to ignore the
-          // portamento and just trigger
-          triggernote = true;
-        } else if (r[i][1] != -1 && r[i][0] != 96) {
-          // FT2: when instrument is specified with portamento, always reset
-          // envelopes (triggerInstrument) unless note is key-off
-          ch.release = 0;
-          ch.fadeOutVol = 32768;
-          ch.env_vol = new EnvelopeFollower(inst.env_vol);
-          ch.env_pan = new EnvelopeFollower(inst.env_pan);
-          if (ch.vibratotype < 4) {
-            ch.vibratopos = 0;
-          }
-          ch.autovibratopos = 0;
-          if (inst.vib_sweep > 0) {
-            ch.autoVibAmp = 0;
-            ch.autoVibSweepInc = ((inst.vib_depth << 8) / inst.vib_sweep) | 0;
-          } else {
-            ch.autoVibAmp = inst.vib_depth << 8;
-            ch.autoVibSweepInc = 0;
-          }
-        }
-      }
-    }
-
-    if (triggernote) {
-      // snapshot old voice for crossfade
-      if (ch.inst && ch.samp && ch.vL + ch.vR > 0) {
-        ch.fadeVoice = {
-          inst: ch.inst, samp: ch.samp,
-          off: ch.off, doff: ch.doff,
-          vL: ch.vL, vR: ch.vR,
-          volDeltaL: -ch.vL / quickRampSamples,
-          volDeltaR: -ch.vR / quickRampSamples,
-          rampSamplesLeft: quickRampSamples,
-          lastSample: ch.lastSample,
-        };
-      }
-      if (ch.effect == 9 && ch.offsetmemory) {
-        ch.off = ch.offsetmemory * 256;
-      } else {
-        ch.off = 0;
-      }
-      ch.release = 0;
-      ch.envtick = 0;
-      ch.fadeOutVol = 32768;
-      ch.env_vol = new EnvelopeFollower(inst.env_vol);
-      ch.env_pan = new EnvelopeFollower(inst.env_pan);
-      if (ch.note) {
-        ch.period = periodForNote(ch, ch.note);
-      }
-      // waveforms 0-3 are retriggered on new notes while 4-7 are continuous
-      if (ch.vibratotype < 4) {
-        ch.vibratopos = 0;
-      }
-      ch.autovibratopos = 0;
-      if (inst.vib_sweep > 0) {
-        ch.autoVibAmp = 0;
-        ch.autoVibSweepInc = ((inst.vib_depth << 8) / inst.vib_sweep) | 0;
-      } else {
-        ch.autoVibAmp = inst.vib_depth << 8;
-        ch.autoVibSweepInc = 0;
-      }
-      // new voice ramps up from zero
-      ch.vL = 0; ch.vR = 0;
-      ch.rampSamplesLeft = 0;
+      if (eff_t0) eff_t0(ch, ch.effectdata);
     }
   }
   // resolve deferred Bxx/Dxx position jumps after all channels processed
@@ -771,6 +788,7 @@ function MixFadeVoiceIntoBuf(fv, start, end, dataL, dataR) {
 function audio_cb(e) {
   f_smp = player.audioctx.sampleRate;
   quickRampSamples = Math.round(f_smp / 200);
+  player.quickRampSamples = quickRampSamples;
   var time_sound_started;
   var buflen = e.outputBuffer.length;
   var dataL = e.outputBuffer.getChannelData(0);
