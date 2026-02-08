@@ -6,10 +6,10 @@ var player = window.XMPlayer;
 
 function eff_t1_0(ch) {  // arpeggio
   if (ch.effectdata !== 0 && ch.inst !== undefined) {
-    // FT2 tick counts down, so ascending order is: base, y (low), x (high)
-    var arpeggio = [0, ch.effectdata>>4, ch.effectdata&15];
-    var note = ch.note + arpeggio[player.cur_tick % 3];
-    ch.periodoffset = player.periodForNote(ch, note) - ch.period;
+    // FT2 tick counts down, so ascending order is: base, x (high), y (low)
+    var tick3 = player.cur_tick % 3;
+    var ofs = tick3 === 1 ? ch.effectdata >> 4 : tick3 === 2 ? ch.effectdata & 15 : 0;
+    ch.periodoffset = player.periodForNote(ch, ch.note + ofs) - ch.period;
   }
 }
 
@@ -71,12 +71,12 @@ function eff_t0_4(ch, data) {  // vibrato
 
 function eff_t1_4(ch) {  // vibrato
   ch.periodoffset = getVibratoDelta(ch.vibratotype, ch.vibratopos) * ch.vibratodepth;
-  if (isNaN(ch.periodoffset)) ch.periodoffset = 0;
   // FT2 updates vibratoPos on every tick including tick 0
   ch.vibratopos += ch.vibratospeed;
   ch.vibratopos &= 63;
 }
 
+// Vibrato sine LUT defined in xm.js; reference it from player
 function getVibratoDelta(type, x) {
   var delta = 0;
   switch (type & 0x03) {
@@ -89,7 +89,7 @@ function getVibratoDelta(type, x) {
       break;
     case 0:
     default: // sine
-      delta = Math.sin(x * Math.PI / 32);
+      delta = player.vibratoSineLUT[x];
       break;
   }
   return delta;
@@ -249,18 +249,7 @@ function eff_t1_e(ch) {  // extended effects tick 1+
         var inst = ch.inst;
         if (!inst || !inst.samplemap) break;
         // FT2: triggerNote(0,0,0,ch) — crossfade + restart voice
-        var qrs = player.quickRampSamples || 220;
-        if (ch.samp && ch.vL + ch.vR > 0) {
-          ch.fadeVoice = {
-            inst: inst, samp: ch.samp,
-            off: ch.off, doff: ch.doff,
-            vL: ch.vL, vR: ch.vR,
-            volDeltaL: -ch.vL / qrs,
-            volDeltaR: -ch.vR / qrs,
-            rampSamplesLeft: qrs,
-            lastSample: ch.lastSample,
-          };
-        }
+        player.snapshotFadeVoice(ch);
         if (ch.samp) {
           ch.fine = ch.samp.fine;
         }
@@ -271,20 +260,7 @@ function eff_t1_e(ch) {  // extended effects tick 1+
         ch.vL = 0; ch.vR = 0;
         ch.rampSamplesLeft = 0;
         // FT2: triggerInstrument(ch) — reset envelopes, fadeout, vibrato, etc.
-        ch.release = 0;
-        ch.fadeOutVol = 32768;
-        ch.env_vol = new player.EnvelopeFollower(inst.env_vol);
-        ch.env_pan = new player.EnvelopeFollower(inst.env_pan);
-        ch.retrigcounter = 0;
-        if (ch.vibratotype < 4) ch.vibratopos = 0;
-        ch.autovibratopos = 0;
-        if (inst.vib_sweep > 0) {
-          ch.autoVibAmp = 0;
-          ch.autoVibSweepInc = ((inst.vib_depth << 8) / inst.vib_sweep) | 0;
-        } else {
-          ch.autoVibAmp = inst.vib_depth << 8;
-          ch.autoVibSweepInc = 0;
-        }
+        player.triggerInstrument(ch, inst);
       }
       break;
     case 0x0c:  // note cut
@@ -378,18 +354,7 @@ function doMultiNoteRetrig(ch) {
       ch.period = player.periodForNote(ch, ch.note);
     }
     // FT2: triggerNote restarts voice with quick volume ramp (crossfade)
-    var qrs = player.quickRampSamples || 220;
-    if (ch.inst && ch.samp && ch.vL + ch.vR > 0) {
-      ch.fadeVoice = {
-        inst: ch.inst, samp: ch.samp,
-        off: ch.off, doff: ch.doff,
-        vL: ch.vL, vR: ch.vR,
-        volDeltaL: -ch.vL / qrs,
-        volDeltaR: -ch.vR / qrs,
-        rampSamplesLeft: qrs,
-        lastSample: ch.lastSample,
-      };
-    }
+    player.snapshotFadeVoice(ch);
     ch.off = 0;
     ch.vL = 0; ch.vR = 0;
     ch.rampSamplesLeft = 0;

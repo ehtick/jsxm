@@ -40,6 +40,9 @@ var f_smp = 44100;  // updated by play callback, default value here
 
 var quickRampSamples = Math.round(f_smp / 200);  // ~5ms crossfade
 
+// Pre-allocated VU buffer for audio callback (sized on first use)
+var vuBuffer = null;
+
 function prettify_note(note) {
   if (note < 0) return "---";
   if (note == 96) return "^^^";
@@ -89,18 +92,30 @@ var amigaPeriodLUT = new Float64Array(1936);
   }
 })();
 
+// Vibrato sine LUT: 64 entries for getVibratoDelta sine waveform
+var vibratoSineLUT = new Float64Array(64);
+(function() {
+  for (var i = 0; i < 64; i++) {
+    vibratoSineLUT[i] = Math.sin(i * Math.PI / 32);
+  }
+})();
+
+// Sqrt panning LUT: 257 entries for sqrt(x/256), x = 0..256
+var sqrtPanLUT = new Float64Array(257);
+(function() {
+  for (var i = 0; i <= 256; i++) {
+    sqrtPanLUT[i] = Math.sqrt(i / 256);
+  }
+})();
+
 function updateChannelPeriod(ch, period) {
   if (period <= 0) return;
   var freq;
   if (player.xm.flags & 1) {
-    // Linear periods (1/4-scale): exponential frequency mapping
     freq = 8363 * Math.pow(2, (1152.0 - period) / 192.0);
   } else {
-    // Amiga periods (1/4-scale): reciprocal frequency mapping
-    // FT2: freq = (8363 * 1712) / fullPeriod = 14335856 / (period * 4)
     freq = 3583964 / period;
   }
-  if (isNaN(freq)) return;
   ch.doff = freq / f_smp;
 }
 
@@ -182,11 +197,27 @@ function keyOff(ch) {
   }
 }
 
+function snapshotFadeVoice(ch) {
+  if (ch.inst && ch.samp && ch.vL + ch.vR > 0) {
+    var fv = ch.fadeVoice || (ch.fadeVoice = {});
+    fv.inst = ch.inst; fv.samp = ch.samp;
+    fv.off = ch.off; fv.doff = ch.doff;
+    fv.vL = ch.vL; fv.vR = ch.vR;
+    fv.volDeltaL = -ch.vL / quickRampSamples;
+    fv.volDeltaR = -ch.vR / quickRampSamples;
+    fv.rampSamplesLeft = quickRampSamples;
+  }
+}
+player.snapshotFadeVoice = snapshotFadeVoice;
+player.vibratoSineLUT = vibratoSineLUT;
+
 function triggerInstrument(ch, inst) {
   ch.release = 0;
   ch.fadeOutVol = 32768;
-  ch.env_vol = new EnvelopeFollower(inst.env_vol);
-  ch.env_pan = new EnvelopeFollower(inst.env_pan);
+  if (ch.env_vol) { ch.env_vol.reset(inst.env_vol); }
+  else { ch.env_vol = new EnvelopeFollower(inst.env_vol); }
+  if (ch.env_pan) { ch.env_pan.reset(inst.env_pan); }
+  else { ch.env_pan = new EnvelopeFollower(inst.env_pan); }
   ch.retrigcounter = 0;
   if (ch.vibratotype < 4) ch.vibratopos = 0;
   if (ch.tremolotype < 4) ch.tremolopos = 0;
@@ -201,8 +232,13 @@ function triggerInstrument(ch, inst) {
   }
 }
 
+function volSlideDown(ch) { ch.vol = Math.max(0, ch.vol - ch.voleffectdata); }
+function volSlideUp(ch) { ch.vol = Math.min(64, ch.vol + ch.voleffectdata); }
+function panSlideLeft(ch) { ch.pan = Math.max(0, ch.pan - ch.voleffectdata); }
+function panSlideRight(ch) { ch.pan = Math.min(255, ch.pan + ch.voleffectdata); }
+
 function nextRow() {
-  if(typeof player.next_row === "undefined") { player.next_row = player.cur_row + 1; }
+  if(player.next_row === undefined) { player.next_row = player.cur_row + 1; }
   player.cur_row = player.next_row;
   player.next_row++;
 
@@ -308,17 +344,7 @@ function nextRow() {
     // FT2 order: triggerNote → resetVolumes → triggerInstrument → THEN effects
     if (triggernote) {
       // snapshot old voice for crossfade
-      if (ch.inst && ch.samp && ch.vL + ch.vR > 0) {
-        ch.fadeVoice = {
-          inst: ch.inst, samp: ch.samp,
-          off: ch.off, doff: ch.doff,
-          vL: ch.vL, vR: ch.vR,
-          volDeltaL: -ch.vL / quickRampSamples,
-          volDeltaR: -ch.vR / quickRampSamples,
-          rampSamplesLeft: quickRampSamples,
-          lastSample: ch.lastSample,
-        };
-      }
+      snapshotFadeVoice(ch);
       // triggerNote: restart voice
       // FT2: 9xx sample offset handled inside triggerNote
       if (ch.effect == 9) {
@@ -347,7 +373,7 @@ function nextRow() {
       ch.rampSamplesLeft = 0;
     }
 
-    // handleEffects_TickZero: volume column effects
+    // handleEffects_TickZero: volume column effects (named functions defined above nextRow)
     ch.voleffectfn = undefined;
     ch.volColumnVol = r[i][2];  // store raw value for retrig vol override
     ch.hasVolColumn = (r[i][2] != -1);
@@ -359,13 +385,9 @@ function nextRow() {
       } else if (v <= 0x50) {
         if (!isNoteDelay) ch.vol = v - 0x10;
       } else if (v >= 0x60 && v < 0x70) {  // volume slide down
-        ch.voleffectfn = function(ch) {
-          ch.vol = Math.max(0, ch.vol - ch.voleffectdata);
-        };
+        ch.voleffectfn = volSlideDown;
       } else if (v >= 0x70 && v < 0x80) {  // volume slide up
-        ch.voleffectfn = function(ch) {
-          ch.vol = Math.min(64, ch.vol + ch.voleffectdata);
-        };
+        ch.voleffectfn = volSlideUp;
       } else if (v >= 0x80 && v < 0x90) {  // fine volume slide down
         if (!isNoteDelay) ch.vol = Math.max(0, ch.vol - (v & 0x0f));
       } else if (v >= 0x90 && v < 0xa0) {  // fine volume slide up
@@ -379,14 +401,10 @@ function nextRow() {
         if (!isNoteDelay) ch.pan = (v & 0x0f) << 4;
       } else if (v >= 0xd0 && v < 0xe0) {  // panning slide left
         ch.voleffectdata = v & 0x0f;
-        ch.voleffectfn = function(ch) {
-          ch.pan = Math.max(0, ch.pan - ch.voleffectdata);
-        };
+        ch.voleffectfn = panSlideLeft;
       } else if (v >= 0xe0 && v < 0xf0) {  // panning slide right
         ch.voleffectdata = v & 0x0f;
-        ch.voleffectfn = function(ch) {
-          ch.pan = Math.min(255, ch.pan + ch.voleffectdata);
-        };
+        ch.voleffectfn = panSlideRight;
       } else if (v >= 0xf0 && v <= 0xff) {  // portamento
         if (v & 0x0f) {
           ch.portaspeed = (v & 0x0f) << 4;
@@ -428,17 +446,7 @@ function triggerNote(ch) {
   var inst = d.inst;
   if (!inst || !inst.samplemap) return;
   // snapshot old voice for crossfade
-  if (ch.inst && ch.samp && ch.vL + ch.vR > 0) {
-    ch.fadeVoice = {
-      inst: ch.inst, samp: ch.samp,
-      off: ch.off, doff: ch.doff,
-      vL: ch.vL, vR: ch.vR,
-      volDeltaL: -ch.vL / quickRampSamples,
-      volDeltaR: -ch.vR / quickRampSamples,
-      rampSamplesLeft: quickRampSamples,
-      lastSample: ch.lastSample,
-    };
-  }
+  snapshotFadeVoice(ch);
   if (ch.effect == 9 && ch.offsetmemory) {
     ch.off = ch.offsetmemory * 256;
   } else {
@@ -465,6 +473,7 @@ function triggerNote(ch) {
   ch.rampSamplesLeft = 0;
 }
 player.triggerNote = triggerNote;
+player.triggerInstrument = triggerInstrument;
 
 function Envelope(points, type, sustain, loopstart, loopend) {
   this.points = points;
@@ -497,6 +506,11 @@ function EnvelopeFollower(env) {
   this.env = env;
   this.tick = 0;
 }
+
+EnvelopeFollower.prototype.reset = function(env) {
+  this.env = env;
+  this.tick = 0;
+};
 
 EnvelopeFollower.prototype.Tick = function(release) {
   var value = this.env.Get(this.tick);
@@ -596,20 +610,14 @@ function nextTick() {
   }
 }
 
-// FT2: when a sample ends, the voice simply stops. No decay/tail.
-// Click prevention is handled by the fadeVoice crossfade mechanism.
-function MixSilenceIntoBuf(ch, start, end, dataL, dataR) {
-  return 0;
-}
-
 function MixChannelIntoBuf(ch, start, end, dataL, dataR) {
   var inst = ch.inst;
   var instsamp = ch.samp;
   var loop = false;
   var looplen = 0, loopstart = 0;
 
-  if (instsamp == undefined || inst == undefined || ch.mute) {
-    return MixSilenceIntoBuf(ch, start, end, dataL, dataR);
+  if (instsamp === undefined || inst === undefined || ch.mute) {
+    return 0;
   }
 
   var samp = instsamp.sampledata;
@@ -626,14 +634,13 @@ function MixChannelIntoBuf(ch, start, end, dataL, dataR) {
   var finalPan = ch.pan + (ch.panE - 32) * (128 - Math.abs(ch.pan - 128)) / 32;
   var p = finalPan - 128;  // center around 0
   var vol = Math.max(0, Math.min(64, ch.vol + ch.voloffset));
-  var panL = Math.max(0, Math.min(256, 128 - p));
-  var panR = Math.max(0, Math.min(256, 128 + p));
+  var panL = Math.max(0, Math.min(256, (128 - p) | 0));
+  var panR = Math.max(0, Math.min(256, (128 + p) | 0));
   var globalVol = player.xm.global_volume;
-  var volL = globalVol * fadeOut * volE * Math.sqrt(panL / 256) * vol / (64 * 128);
-  var volR = globalVol * fadeOut * volE * Math.sqrt(panR / 256) * vol / (64 * 128);
+  var volL = globalVol * fadeOut * volE * sqrtPanLUT[panL] * vol / (64 * 128);
+  var volR = globalVol * fadeOut * volE * sqrtPanLUT[panR] * vol / (64 * 128);
   if (volL < 0) volL = 0;
   if (volR < 0) volR = 0;
-  if (isNaN(volR) || isNaN(volL)) return;
   // FT2: advance sample position even when volume is zero (silenceMixRoutine).
   // Only take the fast path when both current AND target volumes are zero;
   // if current is non-zero we must fall through to ramp down properly.
@@ -770,9 +777,7 @@ function MixFadeVoiceIntoBuf(fv, start, end, dataL, dataR) {
 }
 
 function audio_cb(e) {
-  f_smp = player.audioctx.sampleRate;
-  quickRampSamples = Math.round(f_smp / 200);
-  player.quickRampSamples = quickRampSamples;
+  var nchan = player.xm.nchan;
   var buflen = e.outputBuffer.length;
   var dataL = e.outputBuffer.getChannelData(0);
   var dataR = e.outputBuffer.getChannelData(1);
@@ -781,6 +786,11 @@ function audio_cb(e) {
   for (i = 0; i < buflen; i++) {
     dataL[i] = 0;
     dataR[i] = 0;
+  }
+
+  // ensure pre-allocated VU buffer matches channel count
+  if (!vuBuffer || vuBuffer.length < nchan) {
+    vuBuffer = new Float32Array(nchan);
   }
 
   var offset = 0;
@@ -794,9 +804,10 @@ function audio_cb(e) {
       ticklen = f_smp * 2.5 / player.xm.bpm;  // recalculate after possible Fxx BPM change
     }
     var tickduration = Math.min(buflen, ((ticklen - player.cur_ticksamp) | 0) || 1);
-    var VU = new Float32Array(player.xm.nchan);
+    // reuse pre-allocated VU buffer
+    for (j = 0; j < nchan; j++) vuBuffer[j] = 0;
     var scopes = undefined;
-    for (j = 0; j < player.xm.nchan; j++) {
+    for (j = 0; j < nchan; j++) {
       var scope;
       if (tickduration >= 4*scopewidth) {
         scope = new Float32Array(scopewidth);
@@ -806,7 +817,7 @@ function audio_cb(e) {
       }
 
       var ch = player.xm.channelinfo[j];
-      VU[j] = MixChannelIntoBuf(ch, offset, offset + tickduration, dataL, dataR) /
+      vuBuffer[j] = MixChannelIntoBuf(ch, offset, offset + tickduration, dataL, dataR) /
         tickduration;
       if (ch.fadeVoice) {
         MixFadeVoiceIntoBuf(ch.fadeVoice, offset, offset + tickduration, dataL, dataR);
@@ -824,7 +835,7 @@ function audio_cb(e) {
     if (XMView.pushEvent) {
       XMView.pushEvent({
         t: e.playbackTime + (0.0 + offset) / f_smp,
-        vu: VU,
+        vu: vuBuffer,
         scopes: scopes,
         songpos: player.cur_songpos,
         pat: player.cur_pat,
@@ -1019,7 +1030,8 @@ function load(arrayBuf) {
       'number': i,
     };
     if (nsamp > 0) {
-      var samplemap = new Uint8Array(arrayBuf, idx+33, 96);
+      var samplemap = new Uint8Array(96);
+      samplemap.set(new Uint8Array(arrayBuf, idx+33, 96));
 
       var env_nvol = dv.getUint8(idx+225);
       var env_vol_type = dv.getUint8(idx+233);
@@ -1139,6 +1151,7 @@ function load(arrayBuf) {
 }
 
 var jsNode, gainNode;
+var iosUnlocked = false;
 function init() {
   if (!player.audioctx) {
     var audioContext = window.AudioContext || window.webkitAudioContext;
@@ -1146,6 +1159,10 @@ function init() {
     gainNode = player.audioctx.createGain();
     gainNode.gain.value = 0.1;  // master volume
   }
+  // compute quickRampSamples once from actual sample rate
+  f_smp = player.audioctx.sampleRate;
+  quickRampSamples = Math.round(f_smp / 200);
+  player.quickRampSamples = quickRampSamples;
   if (player.audioctx.createScriptProcessor === undefined) {
     jsNode = player.audioctx.createJavaScriptNode(16384, 0, 2);
   } else {
@@ -1164,12 +1181,15 @@ function play() {
     // start playing
     jsNode.connect(gainNode);
 
-    // hack to get iOS to play anything
-    var temp_osc = player.audioctx.createOscillator();
-    temp_osc.connect(player.audioctx.destination);
-    !!temp_osc.start ? temp_osc.start(0) : temp_osc.noteOn(0);
-    !!temp_osc.stop ? temp_osc.stop(0) : temp_osc.noteOff(0);
-    temp_osc.disconnect();
+    // hack to get iOS to play anything (run only once)
+    if (!iosUnlocked) {
+      iosUnlocked = true;
+      var temp_osc = player.audioctx.createOscillator();
+      temp_osc.connect(player.audioctx.destination);
+      !!temp_osc.start ? temp_osc.start(0) : temp_osc.noteOn(0);
+      !!temp_osc.stop ? temp_osc.stop(0) : temp_osc.noteOff(0);
+      temp_osc.disconnect();
+    }
   }
   player.playing = true;
 }
