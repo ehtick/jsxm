@@ -984,6 +984,9 @@ function load(arrayBuf) {
             vol = dv.getUint8(idx); idx++;
             efftype = dv.getUint8(idx); idx++;
             effparam = dv.getUint8(idx); idx++;
+            // XM format: 0 means "no data" for these fields
+            if (inst === 0) inst = -1;
+            if (vol === 0) vol = -1;
           }
           var notedata = [note, inst, vol, efftype, effparam];
           row.push(notedata);
