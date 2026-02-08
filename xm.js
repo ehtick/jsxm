@@ -694,8 +694,9 @@ function ConvertSample(array, bits) {
     for (k = 0; k < len; k++) {
       b = array[k*2] + (array[k*2 + 1] << 8);
       if (b & 32768) b = b-65536;
-      acc = Math.max(-1, Math.min(1, acc + b / 32768.0));
-      samp[k] = acc;
+      acc = (acc + b) & 0xFFFF;
+      if (acc >= 32768) acc -= 65536;
+      samp[k] = acc / 32768.0;
     }
     return samp;
   }
