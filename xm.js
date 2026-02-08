@@ -429,6 +429,10 @@ function nextTick() {
     if (ch.env_vol === undefined) continue;
     ch.volE = ch.env_vol.Tick(ch.release);
     ch.panE = ch.env_pan.Tick(ch.release);
+    // key-off with no volume envelope: immediately silence (FT2 behavior)
+    if (ch.release && !(inst.env_vol.type & 1)) {
+      ch.volE = 0;
+    }
     // process fadeout after key-off (only if volume envelope is enabled)
     if (ch.release && inst.env_vol && (inst.env_vol.type & 1)) {
       ch.fadeOutVol = Math.max(0, ch.fadeOutVol - (inst.vol_fadeout || 0));
