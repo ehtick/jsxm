@@ -79,14 +79,41 @@ function getstring(dv, offset, len) {
   return str.join('');
 }
 
+// Amiga period LUT (1936 entries, stored in 1/4-scale to match JS period convention)
+// FT2 formula: round(109568 / 2^((368+i)/192))
+var amigaPeriodLUT = new Float64Array(1936);
+(function() {
+  for (var i = 0; i < 1936; i++) {
+    amigaPeriodLUT[i] = Math.round(109568 / Math.pow(2, (368 + i) / 192.0)) / 4;
+  }
+})();
+
 function updateChannelPeriod(ch, period) {
-  var freq = 8363 * Math.pow(2, (1152.0 - period) / 192.0);
+  if (period <= 0) return;
+  var freq;
+  if (player.xm.flags & 1) {
+    // Linear periods (1/4-scale): exponential frequency mapping
+    freq = 8363 * Math.pow(2, (1152.0 - period) / 192.0);
+  } else {
+    // Amiga periods (1/4-scale): reciprocal frequency mapping
+    // FT2: freq = (8363 * 1712) / fullPeriod = 14335856 / (period * 4)
+    freq = 3583964 / period;
+  }
   if (isNaN(freq)) return;
   ch.doff = freq / f_smp;
 }
 
 function periodForNote(ch, note) {
-  return 1920 - (note + ch.samp.note)*16 - ch.fine / 8.0;
+  if (player.xm.flags & 1) {
+    // Linear periods: direct formula (equivalent to linearPeriodLUT / 4)
+    return 1920 - (note + ch.samp.note) * 16 - ch.fine / 8.0;
+  } else {
+    // Amiga periods: table lookup
+    var noteIndex = ((note + ch.samp.note) * 16 + ((ch.fine >> 3) + 16)) | 0;
+    if (noteIndex < 0) noteIndex = 0;
+    if (noteIndex >= 1936) noteIndex = 1935;
+    return amigaPeriodLUT[noteIndex];
+  }
 }
 
 // FT2's auto-vibrato sine table (range -64..+64, negative-first)
