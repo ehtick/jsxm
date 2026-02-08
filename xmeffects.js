@@ -20,8 +20,8 @@ function eff_t0_1(ch, data) {  // pitch slide up
 
 function eff_t1_1(ch) {  // pitch slide up
   if (ch.slideupspeed !== undefined) {
-    // is this limited? it appears not
     ch.period -= ch.slideupspeed;
+    if (ch.period < 1) ch.period = 1;
   }
 }
 
@@ -33,8 +33,8 @@ function eff_t0_2(ch, data) {  // pitch slide down
 
 function eff_t1_2(ch) {  // pitch slide down
   if (ch.slidedownspeed !== undefined) {
-    // 1728 is the period for C-1
-    ch.period = Math.min(1728, ch.period + ch.slidedownspeed);
+    // FT2 clamps at period 31999 (= 7999 in JS 1/4-scale periods)
+    ch.period = Math.min(7999, ch.period + ch.slidedownspeed);
   }
 }
 
