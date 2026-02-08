@@ -333,8 +333,11 @@ function nextRow() {
           lastSample: ch.lastSample,
         };
       }
-      // there's gotta be a less hacky way to handle offset commands...
-      if (ch.effect != 9) ch.off = 0;
+      if (ch.effect == 9 && ch.offsetmemory) {
+        ch.off = ch.offsetmemory * 256;
+      } else {
+        ch.off = 0;
+      }
       ch.release = 0;
       ch.envtick = 0;
       ch.fadeOutVol = 32768;
@@ -394,7 +397,11 @@ function triggerNote(ch) {
       lastSample: ch.lastSample,
     };
   }
-  if (ch.effect != 9) ch.off = 0;
+  if (ch.effect == 9 && ch.offsetmemory) {
+    ch.off = ch.offsetmemory * 256;
+  } else {
+    ch.off = 0;
+  }
   ch.release = 0;
   ch.envtick = 0;
   ch.fadeOutVol = 32768;

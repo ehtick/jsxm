@@ -129,8 +129,8 @@ function eff_t0_8(ch, data) {  // set panning
 }
 
 function eff_t0_9(ch, data) {  // sample offset
+  // FT2: only stores the offset memory here; actual offset is applied in triggerNote()
   if (data !== 0) ch.offsetmemory = data;
-  if (ch.offsetmemory) ch.off = ch.offsetmemory * 256;
 }
 
 function eff_t0_a(ch, data) {  // volume slide
