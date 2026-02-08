@@ -493,6 +493,7 @@ EnvelopeFollower.prototype.Tick = function(release) {
 function nextTick() {
   player.cur_tick++;
   var j, ch;
+  var pattDelayTick = false;
   for (j = 0; j < player.xm.nchan; j++) {
     ch = player.xm.channelinfo[j];
     ch.periodoffset = 0;
@@ -503,6 +504,8 @@ function nextTick() {
       if (player.patterndelay > 0) {
         player.patterndelay--;
         player.cur_tick = 0;
+        // FT2: during pattern delay repeats, tick-0 runs non-zero effects
+        pattDelayTick = true;
       } else {
         player.patterndelay = undefined;
         player.cur_tick = 0;
@@ -516,7 +519,7 @@ function nextTick() {
   for (j = 0; j < player.xm.nchan; j++) {
     ch = player.xm.channelinfo[j];
     var inst = ch.inst;
-    if (player.cur_tick !== 0) {
+    if (player.cur_tick !== 0 || pattDelayTick) {
       if(ch.voleffectfn) ch.voleffectfn(ch);
       if(ch.effectfn) ch.effectfn(ch);
     }
