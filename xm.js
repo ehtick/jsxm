@@ -268,7 +268,7 @@ function nextRow() {
           // with portamento; key-off must keep release active
           ch.envtick = 0;
           ch.release = 0;
-          ch.fadeOutVol = 65536;
+          ch.fadeOutVol = 32768;
           ch.env_vol = new EnvelopeFollower(inst.env_vol);
           ch.env_pan = new EnvelopeFollower(inst.env_pan);
         }
@@ -280,7 +280,7 @@ function nextRow() {
       if (ch.effect != 9) ch.off = 0;
       ch.release = 0;
       ch.envtick = 0;
-      ch.fadeOutVol = 65536;
+      ch.fadeOutVol = 32768;
       ch.env_vol = new EnvelopeFollower(inst.env_vol);
       ch.env_pan = new EnvelopeFollower(inst.env_pan);
       if (ch.note) {
@@ -304,7 +304,7 @@ function triggerNote(ch) {
   if (ch.effect != 9) ch.off = 0;
   ch.release = 0;
   ch.envtick = 0;
-  ch.fadeOutVol = 65536;
+  ch.fadeOutVol = 32768;
   ch.env_vol = new EnvelopeFollower(inst.env_vol);
   ch.env_pan = new EnvelopeFollower(inst.env_pan);
   if (d.note) {
@@ -459,7 +459,7 @@ function MixChannelIntoBuf(ch, start, end, dataL, dataR) {
     sample_end = loopstart + looplen;
   }
   var volE = ch.volE / 64.0;    // current volume envelope
-  var fadeOut = (ch.fadeOutVol !== undefined ? ch.fadeOutVol : 65536) / 65536.0;
+  var fadeOut = (ch.fadeOutVol !== undefined ? ch.fadeOutVol : 32768) / 32768.0;
   // panning formula from spec: FinalPan = Pan + ((EnvPan-32)*(128-|Pan-128|)/32)
   var finalPan = ch.pan + (ch.panE - 32) * (128 - Math.abs(ch.pan - 128)) / 32;
   var p = finalPan - 128;  // center around 0
@@ -686,7 +686,7 @@ function load(arrayBuf) {
       vLprev: 0, vRprev: 0,
       mute: 0,
       volE: 0, panE: 0,
-      fadeOutVol: 65536,
+      fadeOutVol: 32768,
       retrig: 0,
       autovibratopos: 0,
       autovibratosweep: 0,
