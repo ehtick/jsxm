@@ -88,18 +88,35 @@ function periodForNote(ch, note) {
   return 1920 - (note + ch.samp.note)*16 - ch.fine / 8.0;
 }
 
-function getAutoVibratoDelta(type, pos) {
-  switch (type) {
-    case 1: // square
-      return pos < 128 ? 1 : -1;
-    case 2: // ramp up
-      return ((pos + 128) & 255) / 128.0 - 1;
-    case 3: // ramp down
-      return 1 - pos / 128.0;
-    case 0: // sine
-    default:
-      return Math.sin(pos * Math.PI / 128);
-  }
+// FT2's auto-vibrato sine table (range -64..+64, negative-first)
+var autoVibSineTab = new Int8Array([
+   0, -2, -3, -5, -6, -8, -9,-11,-12,-14,-16,-17,-19,-20,-22,-23,
+ -24,-26,-27,-29,-30,-32,-33,-34,-36,-37,-38,-39,-41,-42,-43,-44,
+ -45,-46,-47,-48,-49,-50,-51,-52,-53,-54,-55,-56,-56,-57,-58,-59,
+ -59,-60,-60,-61,-61,-62,-62,-62,-63,-63,-63,-64,-64,-64,-64,-64,
+ -64,-64,-64,-64,-64,-64,-63,-63,-63,-62,-62,-62,-61,-61,-60,-60,
+ -59,-59,-58,-57,-56,-56,-55,-54,-53,-52,-51,-50,-49,-48,-47,-46,
+ -45,-44,-43,-42,-41,-39,-38,-37,-36,-34,-33,-32,-30,-29,-27,-26,
+ -24,-23,-22,-20,-19,-17,-16,-14,-12,-11, -9, -8, -6, -5, -3, -2,
+   0,  2,  3,  5,  6,  8,  9, 11, 12, 14, 16, 17, 19, 20, 22, 23,
+  24, 26, 27, 29, 30, 32, 33, 34, 36, 37, 38, 39, 41, 42, 43, 44,
+  45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 56, 57, 58, 59,
+  59, 60, 60, 61, 61, 62, 62, 62, 63, 63, 63, 64, 64, 64, 64, 64,
+  64, 64, 64, 64, 64, 64, 63, 63, 63, 62, 62, 62, 61, 61, 60, 60,
+  59, 59, 58, 57, 56, 56, 55, 54, 53, 52, 51, 50, 49, 48, 47, 46,
+  45, 44, 43, 42, 41, 39, 38, 37, 36, 34, 33, 32, 30, 29, 27, 26,
+  24, 23, 22, 20, 19, 17, 16, 14, 12, 11,  9,  8,  6,  5,  3,  2
+]);
+
+function getAutoVibratoVal(type, pos) {
+  if (type === 1)      // square
+    return (pos > 127) ? 64 : -64;
+  else if (type === 2) // ramp up
+    return (((pos >> 1) + 64) & 127) - 64;
+  else if (type === 3) // ramp down
+    return (((-(pos >> 1)) + 64) & 127) - 64;
+  else                 // sine
+    return autoVibSineTab[pos];
 }
 
 function setCurrentPattern() {
@@ -301,7 +318,13 @@ function nextRow() {
         ch.vibratopos = 0;
       }
       ch.autovibratopos = 0;
-      ch.autovibratosweep = 0;
+      if (inst.vib_sweep > 0) {
+        ch.autoVibAmp = 0;
+        ch.autoVibSweepInc = ((inst.vib_depth << 8) / inst.vib_sweep) | 0;
+      } else {
+        ch.autoVibAmp = inst.vib_depth << 8;
+        ch.autoVibSweepInc = 0;
+      }
       // new voice ramps up from zero
       ch.vL = 0; ch.vR = 0;
       ch.rampSamplesLeft = 0;
@@ -339,7 +362,13 @@ function triggerNote(ch) {
     ch.vibratopos = 0;
   }
   ch.autovibratopos = 0;
-  ch.autovibratosweep = 0;
+  if (inst.vib_sweep > 0) {
+    ch.autoVibAmp = 0;
+    ch.autoVibSweepInc = ((inst.vib_depth << 8) / inst.vib_sweep) | 0;
+  } else {
+    ch.autoVibAmp = inst.vib_depth << 8;
+    ch.autoVibSweepInc = 0;
+  }
   // new voice ramps up from zero
   ch.vL = 0; ch.vR = 0;
   ch.rampSamplesLeft = 0;
@@ -439,14 +468,25 @@ function nextTick() {
     }
     // auto-vibrato: applied every tick, uses instrument parameters
     var avPeriodOffset = 0;
-    if (inst.vib_depth && inst.vib_rate) {
-      // sweep gradually increases depth
-      if (!ch.release && inst.vib_sweep) {
-        ch.autovibratosweep = Math.min(ch.autovibratosweep + 1, inst.vib_sweep);
+    if (inst.vib_depth > 0) {
+      var autoVibAmp;
+      if (ch.autoVibSweepInc > 0) {
+        if (!ch.release) {
+          autoVibAmp = ch.autoVibAmp + ch.autoVibSweepInc;
+          if ((autoVibAmp >> 8) > inst.vib_depth) {
+            autoVibAmp = inst.vib_depth << 8;
+            ch.autoVibSweepInc = 0;
+          }
+          ch.autoVibAmp = autoVibAmp;
+        } else {
+          autoVibAmp = ch.autoVibSweepInc;  // FT2 quirk on key-off during sweep
+        }
+      } else {
+        autoVibAmp = ch.autoVibAmp;
       }
-      var sweepScale = inst.vib_sweep ? ch.autovibratosweep / inst.vib_sweep : 1;
-      var delta = getAutoVibratoDelta(inst.vib_type, ch.autovibratopos);
-      avPeriodOffset = delta * inst.vib_depth * sweepScale / 8;
+      var autoVibVal = getAutoVibratoVal(inst.vib_type, ch.autovibratopos);
+      // FT2: (val * amp) >> 14, in FT2 period scale. JS periods are 1/4, so >> 16
+      avPeriodOffset = (autoVibVal * autoVibAmp) / 65536;
       ch.autovibratopos = (ch.autovibratopos + inst.vib_rate) & 255;
     }
     updateChannelPeriod(ch, ch.period + ch.periodoffset + avPeriodOffset);
@@ -783,7 +823,8 @@ function load(arrayBuf) {
       fadeOutVol: 32768,
       retrig: 0,
       autovibratopos: 0,
-      autovibratosweep: 0,
+      autoVibAmp: 0,
+      autoVibSweepInc: 0,
       vibratopos: 0,
       vibratodepth: 1,
       vibratospeed: 1,
