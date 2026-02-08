@@ -169,12 +169,9 @@ function nextRow() {
       inst = player.xm.instruments[r[i][1] - 1];
       if (inst && inst.samplemap) {
         ch.inst = inst;
-        if (ch.note && inst.samplemap) {
-          ch.samp = inst.samples[inst.samplemap[ch.note]];
-          ch.vol = ch.samp.vol;
-          ch.pan = ch.samp.pan;
-          ch.fine = ch.samp.fine;
-        }
+        // FT2: instrument-only rows do NOT update ch.samp (smpPtr).
+        // The sample pointer is only updated inside triggerNote().
+        // Vol/pan are restored from the old sample (resetVolumes behavior).
         instrumentOnly = true;  // may be cleared if a note follows
       }
     }
@@ -202,8 +199,14 @@ function nextRow() {
     }
 
     // FT2: instrument-only row (no note) resets envelopes/vol/pan but does NOT
-    // restart the voice — sample position continues from where it was
+    // restart the voice — sample position continues from where it was.
+    // Vol/pan are restored from the current (old) sample's initial values.
     if (instrumentOnly) {
+      if (ch.samp) {
+        ch.vol = ch.samp.vol;
+        ch.pan = ch.samp.pan;
+        ch.fine = ch.samp.fine;
+      }
       ch.release = 0;
       ch.fadeOutVol = 32768;
       ch.env_vol = new EnvelopeFollower(inst.env_vol);
