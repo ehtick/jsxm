@@ -28,6 +28,7 @@ player.xm.global_volume = player.max_global_volume = 128;
 player.nextTick = nextTick;
 player.nextRow = nextRow;
 player.Envelope = Envelope;
+player.EnvelopeFollower = EnvelopeFollower;
 
 // for pretty-printing notes
 var _note_names = [

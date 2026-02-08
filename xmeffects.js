@@ -253,6 +253,12 @@ function eff_t1_e(ch) {  // extended effects tick 1+
     case 9:  // retrig note
       if (ch.retrig_interval && player.cur_tick % ch.retrig_interval === 0) {
         ch.off = 0;
+        ch.release = 0;
+        ch.fadeOutVol = 32768;
+        if (ch.inst && ch.inst.env_vol) {
+          ch.env_vol = new player.EnvelopeFollower(ch.inst.env_vol);
+          ch.env_pan = new player.EnvelopeFollower(ch.inst.env_pan);
+        }
       }
       break;
     case 0x0c:  // note cut
