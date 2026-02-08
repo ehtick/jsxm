@@ -107,7 +107,9 @@ function eff_t0_7(ch, data) {  // tremolo
 }
 
 function eff_t1_7(ch) {  // tremolo
-  ch.voloffset = getVibratoDelta(ch.tremolotype, ch.tremolopos) * ch.tremolodepth;
+  // FT2: (vibratoTab[pos] * depth) >> 6, table values 0-255 with delta ±1.0
+  // we need to scale by 4 to match FT2's effective range
+  ch.voloffset = getVibratoDelta(ch.tremolotype, ch.tremolopos) * ch.tremolodepth * 4;
   if (player.cur_tick > 0) {
     ch.tremolopos += ch.tremolospeed;
     ch.tremolopos &= 63;
