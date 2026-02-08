@@ -277,11 +277,12 @@ function nextRow() {
           // note wasn't already playing; we basically have to ignore the
           // portamento and just trigger
           triggernote = true;
-        } else if (ch.release) {
-          // reset envelopes if note was released but leave offset/pitch/etc
-          // alone
+        } else if (ch.release && r[i][0] >= 0 && r[i][0] < 96) {
+          // reset envelopes only when a real note (not key-off) retriggers
+          // with portamento; key-off must keep release active
           ch.envtick = 0;
           ch.release = 0;
+          ch.fadeOutVol = 65536;
           ch.env_vol = new EnvelopeFollower(inst.env_vol);
           ch.env_pan = new EnvelopeFollower(inst.env_pan);
         }
