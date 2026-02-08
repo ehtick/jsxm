@@ -397,6 +397,7 @@ function Envelope(points, type, sustain, loopstart, loopend) {
   this.sustain = sustain;
   this.loopstart = points[loopstart*2];
   this.loopend = points[loopend*2];
+  this.loopendIndex = loopend;
 }
 
 Envelope.prototype.Get = function(ticks) {
@@ -432,9 +433,14 @@ EnvelopeFollower.prototype.Tick = function(release) {
   }
 
   this.tick++;
-  if (this.env.type & 4) {  // envelope loop continues even after release
+  if (this.env.type & 4) {  // envelope loop
     if (this.tick >= this.env.loopend) {
-      this.tick -= this.env.loopend - this.env.loopstart;
+      // FT2: suppress loop when sustain point is at loop end and note is held
+      if ((this.env.type & 2) && this.env.loopendIndex === this.env.sustain && !release) {
+        // stay at sustain/loop end, don't loop back
+      } else {
+        this.tick -= this.env.loopend - this.env.loopstart;
+      }
     }
   }
   return value;
