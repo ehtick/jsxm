@@ -910,6 +910,17 @@ function load(arrayBuf) {
         if ((samp.type & 3) && (samp.looplen < 2048 || (samp.type & 2))) {
           UnrollSampleLoop(samp);
         }
+        // pad sample with one extra value for safe linear interpolation
+        var padded = new Float32Array(samp.sampledata.length + 1);
+        padded.set(samp.sampledata);
+        if (samp.type & 3) {
+          // looping: wrap to loop start
+          padded[samp.sampledata.length] = samp.sampledata[samp.loop];
+        } else {
+          // non-looping: pad with 0
+          padded[samp.sampledata.length] = 0;
+        }
+        samp.sampledata = padded;
       }
       idx += totalsamples;
       inst.samplemap = samplemap;
