@@ -278,7 +278,8 @@ function nextRow() {
     }
 
     // EDx note delay: suppress trigger on tick 0, store data for delayed trigger
-    if (ch.effect == 14 && (ch.effectdata >> 4) == 0x0d) {
+    // FT2: ED0 is NOT treated as a delay — only ED1-EDF suppress the trigger
+    if (ch.effect == 14 && ch.effectdata >= 0xd1 && ch.effectdata <= 0xdf) {
       ch.delaynote = {
         note: ch.note,
         inst: inst,
