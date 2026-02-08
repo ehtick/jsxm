@@ -80,24 +80,10 @@ function getstring(dv, offset, len) {
   return str.join('');
 }
 
-// Return 2-pole Butterworth lowpass filter coefficients for
-// center frequncy f_c (relative to sampling frequency)
-function filterCoeffs(f_c) {
-  if (f_c > 0.5) {  // we can't lowpass above the nyquist frequency...
-    f_c = 0.5;
-  }
-  var wct = Math.sqrt(2) * Math.PI * f_c;
-  var e = Math.exp(-wct);
-  var c = e * Math.cos(wct);
-  var gain = (1 - 2*c + e*e) / 2;
-  return [gain, 2*c, -e*e];
-}
-
 function updateChannelPeriod(ch, period) {
   var freq = 8363 * Math.pow(2, (1152.0 - period) / 192.0);
   if (isNaN(freq)) return;
   ch.doff = freq / f_smp;
-  ch.filter = filterCoeffs(ch.doff / 2);
 }
 
 function periodForNote(ch, note) {
@@ -438,10 +424,10 @@ function nextTick() {
 // This function gradually brings the channel back down to zero if it isn't
 // already to avoid clicks and pops when samples end.
 function MixSilenceIntoBuf(ch, start, end, dataL, dataR) {
-  var s = ch.filterstate[1];
+  var s = ch.lastSample;
   if (isNaN(s)) return;
   for (var i = start; i < end; i++) {
-    if (Math.abs(s) < 1.526e-5) {  // == 1/65536.0
+    if (Math.abs(s) < 1.526e-5) {
       s = 0;
       break;
     }
@@ -449,8 +435,7 @@ function MixSilenceIntoBuf(ch, start, end, dataL, dataR) {
     dataR[i] += s * ch.vR;
     s *= popfilter_alpha;
   }
-  ch.filterstate[1] = s;
-  ch.filterstate[2] = s;
+  ch.lastSample = s;
   return 0;
 }
 
@@ -489,125 +474,60 @@ function MixChannelIntoBuf(ch, start, end, dataL, dataR) {
   var k = ch.off;
   var dk = ch.doff;
   var Vrms = 0;
-  var f0 = ch.filter[0], f1 = ch.filter[1], f2 = ch.filter[2];
-  var fs0 = ch.filterstate[0], fs1 = ch.filterstate[1], fs2 = ch.filterstate[2];
 
-  // we also low-pass filter volume changes with a simple one-zero,
-  // one-pole filter to avoid pops and clicks when volume changes.
   var vL = popfilter_alpha * ch.vL + (1 - popfilter_alpha) * (volL + ch.vLprev) * 0.5;
   var vR = popfilter_alpha * ch.vR + (1 - popfilter_alpha) * (volR + ch.vRprev) * 0.5;
   var pf_8 = Math.pow(popfilter_alpha, 8);
   ch.vLprev = volL;
   ch.vRprev = volR;
 
-  // we can mix up to this many bytes before running into a sample end/loop
   var i = start;
   var failsafe = 100;
   while (i < end) {
     if (failsafe-- === 0) break;
-    if (k >= sample_end) {  // TODO: implement pingpong looping
+    if (k >= sample_end) {
       if (loop) {
         k = loopstart + (k - loopstart) % looplen;
       } else {
-        // kill sample
         ch.inst = undefined;
-        // fill rest of buf with filtered dc offset using loop above
+        ch.lastSample = samp[(k|0)] || 0;
         return Vrms + MixSilenceIntoBuf(ch, i, end, dataL, dataR);
       }
     }
     var next_event = Math.max(1, Math.min(end, i + (sample_end - k) / dk));
-    // this is the inner loop of the player
 
-    // unrolled 8x
-    var s, y;
+    // unrolled 8x with linear interpolation
+    var ki, kf, s;
     for (; i + 7 < next_event; i+=8) {
-      s = samp[k|0];
-      y = f0 * (s + fs0) + f1*fs1 + f2*fs2;
-      fs2 = fs1; fs1 = y; fs0 = s;
-      k += dk;
-      dataL[i] += vL * y;
-      dataR[i] += vR * y;
-      Vrms += (vL + vR) * y * y;
-
-      s = samp[k|0];
-      y = f0 * (s + fs0) + f1*fs1 + f2*fs2;
-      fs2 = fs1; fs1 = y; fs0 = s;
-      k += dk;
-      dataL[i+1] += vL * y;
-      dataR[i+1] += vR * y;
-      Vrms += (vL + vR) * y * y;
-
-      s = samp[k|0];
-      y = f0 * (s + fs0) + f1*fs1 + f2*fs2;
-      fs2 = fs1; fs1 = y; fs0 = s;
-      k += dk;
-      dataL[i+2] += vL * y;
-      dataR[i+2] += vR * y;
-      Vrms += (vL + vR) * y * y;
-
-      s = samp[k|0];
-      y = f0 * (s + fs0) + f1*fs1 + f2*fs2;
-      fs2 = fs1; fs1 = y; fs0 = s;
-      k += dk;
-      dataL[i+3] += vL * y;
-      dataR[i+3] += vR * y;
-      Vrms += (vL + vR) * y * y;
-
-      s = samp[k|0];
-      y = f0 * (s + fs0) + f1*fs1 + f2*fs2;
-      fs2 = fs1; fs1 = y; fs0 = s;
-      k += dk;
-      dataL[i+4] += vL * y;
-      dataR[i+4] += vR * y;
-      Vrms += (vL + vR) * y * y;
-
-      s = samp[k|0];
-      y = f0 * (s + fs0) + f1*fs1 + f2*fs2;
-      fs2 = fs1; fs1 = y; fs0 = s;
-      k += dk;
-      dataL[i+5] += vL * y;
-      dataR[i+5] += vR * y;
-      Vrms += (vL + vR) * y * y;
-
-      s = samp[k|0];
-      y = f0 * (s + fs0) + f1*fs1 + f2*fs2;
-      fs2 = fs1; fs1 = y; fs0 = s;
-      k += dk;
-      dataL[i+6] += vL * y;
-      dataR[i+6] += vR * y;
-      Vrms += (vL + vR) * y * y;
-
-      s = samp[k|0];
-      y = f0 * (s + fs0) + f1*fs1 + f2*fs2;
-      fs2 = fs1; fs1 = y; fs0 = s;
-      k += dk;
-      dataL[i+7] += vL * y;
-      dataR[i+7] += vR * y;
-      Vrms += (vL + vR) * y * y;
-
-      vL = pf_8 * vL + (1 - pf_8) * volL;
-      vR = pf_8 * vR + (1 - pf_8) * volR;
+      ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
+      dataL[i]+=vL*s; dataR[i]+=vR*s; Vrms+=(vL+vR)*s*s;
+      ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
+      dataL[i+1]+=vL*s; dataR[i+1]+=vR*s; Vrms+=(vL+vR)*s*s;
+      ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
+      dataL[i+2]+=vL*s; dataR[i+2]+=vR*s; Vrms+=(vL+vR)*s*s;
+      ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
+      dataL[i+3]+=vL*s; dataR[i+3]+=vR*s; Vrms+=(vL+vR)*s*s;
+      ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
+      dataL[i+4]+=vL*s; dataR[i+4]+=vR*s; Vrms+=(vL+vR)*s*s;
+      ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
+      dataL[i+5]+=vL*s; dataR[i+5]+=vR*s; Vrms+=(vL+vR)*s*s;
+      ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
+      dataL[i+6]+=vL*s; dataR[i+6]+=vR*s; Vrms+=(vL+vR)*s*s;
+      ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf; k+=dk;
+      dataL[i+7]+=vL*s; dataR[i+7]+=vR*s; Vrms+=(vL+vR)*s*s;
+      vL = pf_8*vL + (1-pf_8)*volL;
+      vR = pf_8*vR + (1-pf_8)*volR;
     }
 
     for (; i < next_event; i++) {
-      s = samp[k|0];
-      // we low-pass filter here since we are resampling some arbitrary
-      // frequency to f_smp; this is an anti-aliasing filter and is
-      // implemented as an IIR butterworth filter (usually we'd use an FIR
-      // brick wall filter, but this is much simpler computationally and
-      // sounds fine)
-      y = f0 * (s + fs0) + f1*fs1 + f2*fs2;
-      fs2 = fs1; fs1 = y; fs0 = s;
-      dataL[i] += vL * y;
-      dataR[i] += vR * y;
-      Vrms += (vL + vR) * y * y;
-      k += dk;
+      ki=k|0; kf=k-ki; s=samp[ki]+(samp[ki+1]-samp[ki])*kf;
+      dataL[i]+=vL*s; dataR[i]+=vR*s;
+      Vrms+=(vL+vR)*s*s;
+      k+=dk;
     }
   }
   ch.off = k;
-  ch.filterstate[0] = fs0;
-  ch.filterstate[1] = fs1;
-  ch.filterstate[2] = fs2;
+  ch.lastSample = s;
   ch.vL = vL;
   ch.vR = vR;
   return Vrms * 0.5;
@@ -755,7 +675,7 @@ function load(arrayBuf) {
   for (i = 0; i < player.xm.nchan; i++) {
     player.xm.channelinfo.push({
       number: i,
-      filterstate: new Float32Array(3),
+      lastSample: 0,
       vol: 0,
       pan: 128,
       period: 1920 - 48*16,
