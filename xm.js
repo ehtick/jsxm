@@ -290,7 +290,7 @@ function nextRow() {
 
     // special handling for portamentos: don't trigger the note
     if (ch.effect == 3 || ch.effect == 5 || r[i][2] >= 0xf0) {
-      if (r[i][0] != -1) {
+      if (r[i][0] != -1 && r[i][0] != 96) {
         ch.periodtarget = periodForNote(ch, ch.note);
       }
       triggernote = false;
@@ -299,14 +299,24 @@ function nextRow() {
           // note wasn't already playing; we basically have to ignore the
           // portamento and just trigger
           triggernote = true;
-        } else if (ch.release && r[i][0] >= 0 && r[i][0] < 96) {
-          // reset envelopes only when a real note (not key-off) retriggers
-          // with portamento; key-off must keep release active
-          ch.envtick = 0;
+        } else if (r[i][1] != -1 && r[i][0] != 96) {
+          // FT2: when instrument is specified with portamento, always reset
+          // envelopes (triggerInstrument) unless note is key-off
           ch.release = 0;
           ch.fadeOutVol = 32768;
           ch.env_vol = new EnvelopeFollower(inst.env_vol);
           ch.env_pan = new EnvelopeFollower(inst.env_pan);
+          if (ch.vibratotype < 4) {
+            ch.vibratopos = 0;
+          }
+          ch.autovibratopos = 0;
+          if (inst.vib_sweep > 0) {
+            ch.autoVibAmp = 0;
+            ch.autoVibSweepInc = ((inst.vib_depth << 8) / inst.vib_sweep) | 0;
+          } else {
+            ch.autoVibAmp = inst.vib_depth << 8;
+            ch.autoVibSweepInc = 0;
+          }
         }
       }
     }
