@@ -186,7 +186,7 @@ function eff_t0_e(ch, data) {  // extended effects!
       ch.vibratotype = data & 0x07;
       break;
     case 5:  // finetune
-      ch.fine = (data<<4) + data - 128;
+      ch.fine = (data << 4) - 128;
       break;
     case 6:  // pattern loop
       if (data == 0) {
