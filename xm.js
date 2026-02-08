@@ -533,15 +533,15 @@ function nextTick() {
     if (inst.vib_depth > 0) {
       var autoVibAmp;
       if (ch.autoVibSweepInc > 0) {
+        // FT2: on key-off during sweep, autoVibAmp = sweep increment (not accumulated)
+        autoVibAmp = ch.autoVibSweepInc;
         if (!ch.release) {
-          autoVibAmp = ch.autoVibAmp + ch.autoVibSweepInc;
+          autoVibAmp += ch.autoVibAmp;
           if ((autoVibAmp >> 8) > inst.vib_depth) {
             autoVibAmp = inst.vib_depth << 8;
             ch.autoVibSweepInc = 0;
           }
           ch.autoVibAmp = autoVibAmp;
-        } else {
-          autoVibAmp = ch.autoVibAmp;  // on key-off during sweep, use current amplitude
         }
       } else {
         autoVibAmp = ch.autoVibAmp;
