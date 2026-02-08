@@ -866,40 +866,51 @@ function load(arrayBuf) {
     var patrows = dv.getUint16(idx + 5, true);
     var patsize = dv.getUint16(idx + 7, true);
     idx += 9;
-    for (j = 0; patsize > 0 && j < patrows; j++) {
-      row = [];
-      for (k = 0; k < player.xm.nchan; k++) {
-        var byte0 = dv.getUint8(idx); idx++;
-        var note = -1, inst = -1, vol = -1, efftype = 0, effparam = 0;
-        if (byte0 & 0x80) {
-          if (byte0 & 0x01) {
-            note = dv.getUint8(idx) - 1; idx++;
-          }
-          if (byte0 & 0x02) {
+    if (patsize > 0) {
+      for (j = 0; j < patrows; j++) {
+        row = [];
+        for (k = 0; k < player.xm.nchan; k++) {
+          var byte0 = dv.getUint8(idx); idx++;
+          var note = -1, inst = -1, vol = -1, efftype = 0, effparam = 0;
+          if (byte0 & 0x80) {
+            if (byte0 & 0x01) {
+              note = dv.getUint8(idx) - 1; idx++;
+            }
+            if (byte0 & 0x02) {
+              inst = dv.getUint8(idx); idx++;
+            }
+            if (byte0 & 0x04) {
+              vol = dv.getUint8(idx); idx++;
+            }
+            if (byte0 & 0x08) {
+              efftype = dv.getUint8(idx); idx++;
+            }
+            if (byte0 & 0x10) {
+              effparam = dv.getUint8(idx); idx++;
+            }
+          } else {
+            // byte0 is note from 1..96 or 0 for nothing or 97 for release
+            // so we subtract 1 so that C-0 is stored as 0
+            note = byte0 - 1;
             inst = dv.getUint8(idx); idx++;
-          }
-          if (byte0 & 0x04) {
             vol = dv.getUint8(idx); idx++;
-          }
-          if (byte0 & 0x08) {
             efftype = dv.getUint8(idx); idx++;
-          }
-          if (byte0 & 0x10) {
             effparam = dv.getUint8(idx); idx++;
           }
-        } else {
-          // byte0 is note from 1..96 or 0 for nothing or 97 for release
-          // so we subtract 1 so that C-0 is stored as 0
-          note = byte0 - 1;
-          inst = dv.getUint8(idx); idx++;
-          vol = dv.getUint8(idx); idx++;
-          efftype = dv.getUint8(idx); idx++;
-          effparam = dv.getUint8(idx); idx++;
+          var notedata = [note, inst, vol, efftype, effparam];
+          row.push(notedata);
         }
-        var notedata = [note, inst, vol, efftype, effparam];
-        row.push(notedata);
+        pattern.push(row);
       }
-      pattern.push(row);
+    } else {
+      // FT2: empty patterns (data size = 0) get default 64 rows of silence
+      for (j = 0; j < patrows; j++) {
+        row = [];
+        for (k = 0; k < player.xm.nchan; k++) {
+          row.push([-1, -1, -1, 0, 0]);
+        }
+        pattern.push(row);
+      }
     }
     player.xm.patterns.push(pattern);
   }
@@ -1042,7 +1053,7 @@ function init() {
     var audioContext = window.AudioContext || window.webkitAudioContext;
     player.audioctx = new audioContext();
     gainNode = player.audioctx.createGain();
-    gainNode.gain.value = 0.1;  // master volume
+    gainNode.gain.value = 0.125;  // master volume (default for slider at 50%)
   }
   if (player.audioctx.createScriptProcessor === undefined) {
     jsNode = player.audioctx.createJavaScriptNode(2048, 0, 2);
@@ -1092,4 +1103,10 @@ function stop() {
   if (XMView.stop) XMView.stop();
   init();
 }
+
+function setMasterVolume(v) {
+  if (gainNode) gainNode.gain.value = v;
+}
+
+player.setMasterVolume = setMasterVolume;
 })(window);
