@@ -95,10 +95,7 @@ function filterCoeffs(f_c) {
 
 function updateChannelPeriod(ch, period) {
   var freq = 8363 * Math.pow(2, (1152.0 - period) / 192.0);
-  if (isNaN(freq)) {
-    console.log("invalid period!", period);
-    return;
-  }
+  if (isNaN(freq)) return;
   ch.doff = freq / f_smp;
   ch.filter = filterCoeffs(ch.doff / 2);
 }
@@ -178,7 +175,6 @@ function nextRow() {
           ch.fine = ch.samp.fine;
         }
       } else {
-        // console.log("invalid inst", r[i][1], instruments.length);
       }
     }
 
@@ -209,7 +205,7 @@ function nextRow() {
       var v = r[i][2];
       ch.voleffectdata = v & 0x0f;
       if (v < 0x10) {
-        console.log("channel", i, "invalid volume", v.toString(16));
+        // invalid volume column byte, ignore
       } else if (v <= 0x50) {
         ch.vol = v - 0x10;
       } else if (v >= 0x60 && v < 0x70) {  // volume slide down
@@ -247,8 +243,6 @@ function nextRow() {
           ch.portaspeed = (v & 0x0f) << 4;
         }
         ch.voleffectfn = player.effects_t1[3];  // just run 3x0
-      } else {
-        console.log("channel", i, "volume effect", v.toString(16));
       }
     }
 
@@ -260,8 +254,6 @@ function nextRow() {
       if (eff_t0 && eff_t0(ch, ch.effectdata)) {
         triggernote = false;
       }
-    } else {
-      console.log("channel", i, "effect > 36", ch.effect);
     }
 
     // EDx note delay: suppress trigger on tick 0, store data for delayed trigger
@@ -418,18 +410,8 @@ function nextTick() {
       if(ch.voleffectfn) ch.voleffectfn(ch);
       if(ch.effectfn) ch.effectfn(ch);
     }
-    if (isNaN(ch.period)) {
-      console.log(prettify_notedata(
-            player.xm.patterns[player.cur_pat][player.cur_row][j]),
-          "set channel", j, "period to NaN");
-    }
     if (inst === undefined) continue;
-    if (ch.env_vol === undefined) {
-      console.log(prettify_notedata(
-            player.xm.patterns[player.cur_pat][player.cur_row][j]),
-          "set channel", j, "env_vol to undefined, but note is playing");
-      continue;
-    }
+    if (ch.env_vol === undefined) continue;
     ch.volE = ch.env_vol.Tick(ch.release);
     ch.panE = ch.env_pan.Tick(ch.release);
     // process fadeout after key-off (only if volume envelope is enabled)
@@ -456,10 +438,7 @@ function nextTick() {
 // already to avoid clicks and pops when samples end.
 function MixSilenceIntoBuf(ch, start, end, dataL, dataR) {
   var s = ch.filterstate[1];
-  if (isNaN(s)) {
-    console.log("NaN filterstate?", ch.filterstate, ch.filter);
-    return;
-  }
+  if (isNaN(s)) return;
   for (var i = start; i < end; i++) {
     if (Math.abs(s) < 1.526e-5) {  // == 1/65536.0
       s = 0;
@@ -471,10 +450,6 @@ function MixSilenceIntoBuf(ch, start, end, dataL, dataR) {
   }
   ch.filterstate[1] = s;
   ch.filterstate[2] = s;
-  if (isNaN(s)) {
-    console.log("NaN filterstate after adding silence?", ch.filterstate, ch.filter, i);
-    return;
-  }
   return 0;
 }
 
@@ -509,10 +484,7 @@ function MixChannelIntoBuf(ch, start, end, dataL, dataR) {
   if (volR < 0) volR = 0;
   if (volR === 0 && volL === 0)
     return;
-  if (isNaN(volR) || isNaN(volL)) {
-    console.log("NaN volume!?", ch.number, volL, volR, volE, panE, ch.vol);
-    return;
-  }
+  if (isNaN(volR) || isNaN(volL)) return;
   var k = ch.off;
   var dk = ch.doff;
   var Vrms = 0;
@@ -531,11 +503,7 @@ function MixChannelIntoBuf(ch, start, end, dataL, dataR) {
   var i = start;
   var failsafe = 100;
   while (i < end) {
-    if (failsafe-- === 0) {
-      console.log("failsafe in mixing loop! channel", ch.number, k, sample_end,
-          loopstart, looplen, dk);
-      break;
-    }
+    if (failsafe-- === 0) break;
     if (k >= sample_end) {  // TODO: implement pingpong looping
       if (loop) {
         k = loopstart + (k - loopstart) % looplen;
@@ -758,7 +726,6 @@ function UnrollSampleLoop(samp) {
       }
     }
   }
-  console.log("unrolled sample loop; looplen", samp.looplen, "x", nloops, " = ", samplesiz);
   samp.sampledata = data;
   samp.looplen = nloops * samp.looplen;
   samp.type = 1;
@@ -809,17 +776,11 @@ function load(arrayBuf) {
       voloffset: 0,
     });
   }
-  console.log("header len " + hlen);
-
-  console.log("songlen %d, %d channels, %d patterns, %d instruments", songlen, player.xm.nchan, npat, ninst);
-  console.log("loop @%d", player.xm.song_looppos);
-  console.log("flags=%d tempo %d bpm %d", player.xm.flags, player.xm.tempo, player.xm.bpm);
 
   player.xm.songpats = [];
   for (i = 0; i < songlen; i++) {
     player.xm.songpats.push(dv.getUint8(0x50 + i));
   }
-  console.log("song patterns: ", player.xm.songpats);
 
   var idx = hlen;
   player.xm.patterns = [];
@@ -828,7 +789,6 @@ function load(arrayBuf) {
     var patheaderlen = dv.getUint32(idx, true);
     var patrows = dv.getUint16(idx + 5, true);
     var patsize = dv.getUint16(idx + 7, true);
-    console.log("pattern %d: %d bytes, %d rows", i, patsize, patrows);
     idx += 9;
     for (j = 0; patsize > 0 && j < patrows; j++) {
       row = [];
@@ -907,8 +867,6 @@ function load(arrayBuf) {
       // FIXME: ignoring keymaps for now and assuming 1 sample / instrument
       // var keymap = getarray(dv, idx+0x21);
       var samphdrsiz = dv.getUint32(idx+0x1d, true);
-      console.log("hdrsiz %d; instrument %s: '%s' %d samples, samphdrsiz %d",
-          hdrsiz, (i+1).toString(16), instname, nsamp, samphdrsiz);
       idx += hdrsiz;
       var totalsamples = 0;
       var samps = [];
@@ -926,15 +884,6 @@ function load(arrayBuf) {
         if (samplooplen === 0) {
           samptype &= ~3;
         }
-        console.log("sample %d: len %d name '%s' loop %d/%d vol %d offset %s",
-            j, samplen, sampname, samploop, samplooplen, sampvol, sampleoffset.toString(16));
-        console.log("           type %d note %s(%d) finetune %d pan %d",
-            samptype, prettify_note(sampnote + 12*4), sampnote, sampfinetune, samppan);
-        console.log("           vol env", env_vol, env_vol_sustain,
-            env_vol_loop_start, env_vol_loop_end, "type", env_vol_type,
-            "fadeout", vol_fadeout);
-        console.log("           pan env", env_pan, env_pan_sustain,
-            env_pan_loop_start, env_pan_loop_end, "type", env_pan_type);
         var samp = {
           'len': samplen, 'loop': samploop,
           'looplen': samplooplen, 'note': sampnote, 'fine': sampfinetune,
@@ -993,12 +942,10 @@ function load(arrayBuf) {
       }
     } else {
       idx += hdrsiz;
-      console.log("empty instrument", i, hdrsiz, idx);
     }
     player.xm.instruments.push(inst);
   }
 
-  console.log("loaded \"" + player.xm.songname + "\"");
   return true;
 }
 

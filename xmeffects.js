@@ -70,11 +70,7 @@ function eff_t0_4(ch, data) {  // vibrato
 
 function eff_t1_4(ch) {  // vibrato
   ch.periodoffset = getVibratoDelta(ch.vibratotype, ch.vibratopos) * ch.vibratodepth;
-  if (isNaN(ch.periodoffset)) {
-    console.log("vibrato periodoffset NaN?",
-        ch.vibratopos, ch.vibratospeed, ch.vibratodepth);
-    ch.periodoffset = 0;
-  }
+  if (isNaN(ch.periodoffset)) ch.periodoffset = 0;
   // only updates on non-first ticks
   if (player.cur_tick > 0) {
     ch.vibratopos += ch.vibratospeed;
@@ -243,7 +239,6 @@ function eff_t0_e(ch, data) {  // extended effects!
       }
       break;
     default:
-      console.log("unimplemented extended effect E", ch.effectdata.toString(16));
       break;
   }
 }
@@ -269,10 +264,8 @@ function eff_t1_e(ch) {  // extended effects tick 1+
 }
 
 function eff_t0_f(ch, data) {  // set tempo
-  if (data === 0) {
-    console.log("tempo 0?");
-    return;
-  } else if (data < 0x20) {
+  if (data === 0) return;
+  else if (data < 0x20) {
     player.xm.tempo = data;
   } else {
     player.xm.bpm = data;
@@ -395,9 +388,7 @@ function eff_t1_k(ch) {  // key off at tick
 }
 
 function eff_unimplemented() {}
-function eff_unimplemented_t0(ch, data) {
-  console.log("unimplemented effect", player.prettify_effect(ch.effect, data));
-}
+function eff_unimplemented_t0() {}
 
 player.effects_t0 = [  // effect functions on tick 0
   eff_t1_0,  // 1, arpeggio is processed on all ticks
