@@ -364,11 +364,12 @@ function eff_t0_x(ch, data) {  // extra fine portamento
   if ((data >> 4) === 1) {  // X1x - extra fine porta up
     if (val !== 0) ch.extrafineportaup = val;
     else val = ch.extrafineportaup || 0;
-    ch.period -= val;
+    // FT2: extra fine porta subtracts raw param (no *4), so in 1/4-scale periods: /4
+    ch.period -= val / 4;
   } else if ((data >> 4) === 2) {  // X2x - extra fine porta down
     if (val !== 0) ch.extrafineportadown = val;
     else val = ch.extrafineportadown || 0;
-    ch.period += val;
+    ch.period += val / 4;
   }
 }
 
