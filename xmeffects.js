@@ -135,7 +135,12 @@ function eff_t0_9(ch, data) {  // sample offset
 
 function eff_t0_a(ch, data) {  // volume slide
   if (data) {
-    ch.volumeslide = -(data & 0x0f) + (data >> 4);
+    // FT2: high nibble takes priority over low nibble
+    if (data & 0xf0) {
+      ch.volumeslide = data >> 4;
+    } else {
+      ch.volumeslide = -(data & 0x0f);
+    }
   }
 }
 
