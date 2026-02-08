@@ -307,33 +307,50 @@ function eff_t1_h(ch) {  // global volume slide
   }
 }
 
-function eff_t0_r(ch, data) {  // retrigger
-  if (data & 0x0f) ch.retrig = (ch.retrig & 0xf0) + (data & 0x0f);
-  if (data & 0xf0) ch.retrig = (ch.retrig & 0x0f) + (data & 0xf0);
-
-  // retrigger volume table
+function retriggerVolume(ch) {
   switch (ch.retrig >> 4) {
     case 1: ch.vol -= 1; break;
     case 2: ch.vol -= 2; break;
     case 3: ch.vol -= 4; break;
     case 4: ch.vol -= 8; break;
     case 5: ch.vol -= 16; break;
-    case 6: ch.vol *= 2; ch.vol /= 3; break;
-    case 7: ch.vol /= 2; break;
+    case 6: ch.vol = (ch.vol * 2 / 3) | 0; break;
+    case 7: ch.vol = ch.vol >> 1; break;
     case 9: ch.vol += 1; break;
     case 0x0a: ch.vol += 2; break;
     case 0x0b: ch.vol += 4; break;
     case 0x0c: ch.vol += 8; break;
     case 0x0d: ch.vol += 16; break;
-    case 0x0e: ch.vol *= 3; ch.vol /= 2; break;
+    case 0x0e: ch.vol = (ch.vol * 3 / 2) | 0; break;
     case 0x0f: ch.vol *= 2; break;
   }
   ch.vol = Math.min(64, Math.max(0, ch.vol));
 }
 
+function retriggerNote(ch) {
+  ch.off = 0;
+  ch.release = 0;
+  ch.fadeOutVol = 32768;
+  if (ch.inst && ch.inst.env_vol) {
+    ch.env_vol = new player.EnvelopeFollower(ch.inst.env_vol);
+    ch.env_pan = new player.EnvelopeFollower(ch.inst.env_pan);
+  }
+}
+
+function eff_t0_r(ch, data) {  // retrigger
+  if (data & 0x0f) ch.retrig = (ch.retrig & 0xf0) + (data & 0x0f);
+  if (data & 0xf0) ch.retrig = (ch.retrig & 0x0f) + (data & 0xf0);
+  ch.retrigcounter = 0;
+  retriggerVolume(ch);
+  retriggerNote(ch);
+}
+
 function eff_t1_r(ch) {
-  if (player.cur_tick % (ch.retrig & 0x0f) === 0) {
-    ch.off = 0;
+  ch.retrigcounter = (ch.retrigcounter || 0) + 1;
+  if (ch.retrigcounter >= (ch.retrig & 0x0f)) {
+    ch.retrigcounter = 0;
+    retriggerVolume(ch);
+    retriggerNote(ch);
   }
 }
 
