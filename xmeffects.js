@@ -6,7 +6,8 @@ var player = window.XMPlayer;
 
 function eff_t1_0(ch) {  // arpeggio
   if (ch.effectdata !== 0 && ch.inst !== undefined) {
-    var arpeggio = [0, ch.effectdata>>4, ch.effectdata&15];
+    // FT2 tick counts down, so ascending order is: base, y (low), x (high)
+    var arpeggio = [0, ch.effectdata&15, ch.effectdata>>4];
     var note = ch.note + arpeggio[player.cur_tick % 3];
     ch.periodoffset = player.periodForNote(ch, note) - ch.period;
   }
@@ -412,7 +413,7 @@ function eff_unimplemented() {}
 function eff_unimplemented_t0() {}
 
 player.effects_t0 = [  // effect functions on tick 0
-  eff_t1_0,  // 1, arpeggio is processed on all ticks
+  null,  // 0, arpeggio does nothing on tick 0 (FT2: dummy)
   eff_t0_1,
   eff_t0_2,
   eff_t0_3,
