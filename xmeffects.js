@@ -386,17 +386,32 @@ function eff_t0_x(ch, data) {  // extra fine portamento
 
 function eff_t0_t(ch, data) {  // tremor
   if (data) {
-    ch.tremoroncycles = (data >> 4) + 1;
-    ch.tremoroffcycles = (data & 0x0f) + 1;
+    ch.tremorParam = data;
   }
 }
 
 function eff_t1_t(ch) {  // tremor
-  if (ch.tremoroncycles === undefined) return;
-  ch.tremorcounter = (ch.tremorcounter || 0) + 1;
-  var total = ch.tremoroncycles + ch.tremoroffcycles;
-  if (ch.tremorcounter >= total) ch.tremorcounter = 0;
-  if (ch.tremorcounter >= ch.tremoroncycles) {
+  // FT2 tremor: tremorPos is a packed byte with bit 7 = sign (0x80=on, 0x00=off),
+  // bits 0-6 = countdown. When countdown underflows, toggle sign and reload.
+  var param = ch.tremorParam;
+  if (param === undefined) return;
+
+  var tremorSign = (ch.tremorPos || 0) & 0x80;
+  var tremorData = (ch.tremorPos || 0) & 0x7f;
+
+  tremorData--;
+  if (tremorData < 0) {
+    if (tremorSign === 0x80) {
+      tremorSign = 0x00;
+      tremorData = param & 0x0f;
+    } else {
+      tremorSign = 0x80;
+      tremorData = param >> 4;
+    }
+  }
+
+  ch.tremorPos = tremorSign | tremorData;
+  if (tremorSign !== 0x80) {
     ch.voloffset = -ch.vol;  // mute during off phase
   }
 }
