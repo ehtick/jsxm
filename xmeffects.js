@@ -243,8 +243,8 @@ function eff_t0_e(ch, data) {  // extended effects!
 function eff_t1_e(ch) {  // extended effects tick 1+
   switch (ch.effectdata >> 4) {
     case 9:  // retrig note
-      // FT2 uses (speed - tick) % param, not tick % param
-      if (ch.retrig_interval && (player.xm.tempo - player.cur_tick) % ch.retrig_interval === 0) {
+      // FT2: (speed - tick) counts 1,2,3... same as our cur_tick
+      if (ch.retrig_interval && player.cur_tick % ch.retrig_interval === 0) {
         ch.off = 0;
         ch.release = 0;
         ch.fadeOutVol = 32768;
@@ -255,14 +255,12 @@ function eff_t1_e(ch) {  // extended effects tick 1+
       }
       break;
     case 0x0c:  // note cut
-      // FT2 uses (speed - tick) for comparison, not tick directly
-      if ((player.xm.tempo - player.cur_tick) == (ch.effectdata & 0x0f)) {
+      if (player.cur_tick === (ch.effectdata & 0x0f)) {
         ch.vol = 0;
       }
       break;
     case 0x0d:  // note delay
-      // FT2 uses (speed - tick) for comparison
-      if ((player.xm.tempo - player.cur_tick) === (ch.effectdata & 0x0f)) {
+      if (player.cur_tick === (ch.effectdata & 0x0f)) {
         player.triggerNote(ch);
       }
       break;
@@ -451,8 +449,7 @@ function eff_t0_k(ch, data) {  // key off at tick 0
 }
 
 function eff_t1_k(ch) {  // key off at tick
-  // FT2 uses (speed - tick) for comparison
-  if ((player.xm.tempo - player.cur_tick) === (ch.effectdata & 31)) {
+  if (player.cur_tick === (ch.effectdata & 31)) {
     ch.release = 1;
   }
 }
