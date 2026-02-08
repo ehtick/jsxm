@@ -555,22 +555,9 @@ function nextTick() {
   }
 }
 
-// This function gradually brings the channel back down to zero if it isn't
-// already to avoid clicks and pops when samples end.
+// FT2: when a sample ends, the voice simply stops. No decay/tail.
+// Click prevention is handled by the fadeVoice crossfade mechanism.
 function MixSilenceIntoBuf(ch, start, end, dataL, dataR) {
-  var decay = 0.9837;
-  var s = ch.lastSample;
-  if (isNaN(s)) return;
-  for (var i = start; i < end; i++) {
-    if (Math.abs(s) < 1.526e-5) {
-      s = 0;
-      break;
-    }
-    dataL[i] += s * ch.vL;
-    dataR[i] += s * ch.vR;
-    s *= decay;
-  }
-  ch.lastSample = s;
   return 0;
 }
 
