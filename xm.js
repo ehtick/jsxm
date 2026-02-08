@@ -247,7 +247,7 @@ function nextRow() {
         if (v & 0x0f) ch.vibratodepth = (v & 0x0f) * 2;
         ch.voleffectfn = player.effects_t1[4];  // use vibrato effect directly
       } else if (v >= 0xc0 && v < 0xd0) {  // set panning
-        ch.pan = (v & 0x0f) * 0x11;
+        ch.pan = (v & 0x0f) << 4;  // FT2: shift left 4, range 0..240
       } else if (v >= 0xd0 && v < 0xe0) {  // panning slide left
         ch.voleffectdata = v & 0x0f;
         ch.voleffectfn = function(ch) {
@@ -374,6 +374,10 @@ function nextRow() {
       player.cur_songpos = player.xm.song_looppos;
     player.next_row = player.pBreakPos || 0;
     setCurrentPattern();
+    // FT2: if pBreakPos exceeds the target pattern's row count, reset to 0
+    if (player.next_row >= player.xm.patterns[player.cur_pat].length) {
+      player.next_row = 0;
+    }
     player.posJumpFlag = false;
     player.posJumpPos = undefined;
     player.pBreakPos = undefined;

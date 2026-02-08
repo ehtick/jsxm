@@ -153,6 +153,7 @@ function eff_t1_a(ch) {  // volume slide
 function eff_t0_b(ch, data) {  // song jump (deferred)
   player.posJumpFlag = true;
   player.posJumpPos = data;
+  player.pBreakPos = 0;  // FT2: Bxx resets pBreakPos
 }
 
 function eff_t0_c(ch, data) {  // set volume
@@ -173,11 +174,12 @@ function eff_t0_e(ch, data) {  // extended effects!
       if (data !== 0) ch.fineportaup = data;
       else data = ch.fineportaup || 0;
       ch.period -= data;
+      if (ch.period < 1) ch.period = 1;
       break;
     case 2:  // fine porta down
       if (data !== 0) ch.fineportadown = data;
       else data = ch.fineportadown || 0;
-      ch.period += data;
+      ch.period = Math.min(7999, ch.period + data);
       break;
     case 3:  // glissando control
       ch.glissando = data;
