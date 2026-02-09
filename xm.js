@@ -419,6 +419,11 @@ function nextRow() {
       if (eff_t0) eff_t0(ch, ch.effectdata);
     }
   }
+  // FT2: resolve E6x pattern loop (pBreakFlag) before Bxx/Dxx
+  if (player.pBreakFlag) {
+    player.pBreakFlag = false;
+    player.next_row = player.pBreakPos;
+  }
   // resolve deferred Bxx/Dxx position jumps after all channels processed
   if (player.posJumpFlag) {
     if (player.posJumpPos !== undefined) {
@@ -436,8 +441,8 @@ function nextRow() {
     }
     player.posJumpFlag = false;
     player.posJumpPos = undefined;
-    player.pBreakPos = undefined;
   }
+  player.pBreakPos = undefined;
 }
 
 function triggerNote(ch) {

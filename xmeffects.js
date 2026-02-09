@@ -192,14 +192,14 @@ function eff_t0_e(ch, data) {  // extended effects!
       break;
     case 6:  // pattern loop
       if (data == 0) {
-        ch.loopstart = player.cur_row
-      } else {
-        if (ch.loopremaining === undefined || ch.loopremaining === 0) {
-          ch.loopremaining = data;
-          player.next_row = ch.loopstart || 0;
-        } else if (--ch.loopremaining > 0) {
-          player.next_row = ch.loopstart || 0;
-        }
+        ch.loopstart = player.cur_row;
+      } else if (ch.loopremaining === undefined || ch.loopremaining === 0) {
+        ch.loopremaining = data;
+        player.pBreakPos = ch.loopstart || 0;
+        player.pBreakFlag = true;
+      } else if (--ch.loopremaining > 0) {
+        player.pBreakPos = ch.loopstart || 0;
+        player.pBreakFlag = true;
       }
       break;
     case 7:  // set tremolo waveform
