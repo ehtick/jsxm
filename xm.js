@@ -663,6 +663,11 @@ function MixChannelIntoBuf(ch, start, end, dataL, dataR) {
     ch.off = newOff;
     return 0;
   }
+  // FT2: if position already past sample end (e.g. 9xx offset), voice is inactive
+  if (ch.off >= sample_end) {
+    ch.vL = volL; ch.vR = volR;
+    return 0;
+  }
   var k = ch.off;
   var dk = ch.doff;
   var Vrms = 0;
