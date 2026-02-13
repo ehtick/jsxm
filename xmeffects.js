@@ -6,8 +6,8 @@ var player = window.XMPlayer;
 
 function eff_t1_0(ch) {  // arpeggio
   if (ch.effectdata !== 0 && ch.inst !== undefined) {
-    // FT2 tick counts down, so ascending order is: base, x (high), y (low)
-    var tick3 = player.cur_tick % 3;
+    // FT2 indexes arpeggioTab with countdown tick; equivalent to (tempo - tick) % 3
+    var tick3 = (player.xm.tempo - player.cur_tick) % 3;
     var ofs = tick3 === 1 ? ch.effectdata >> 4 : tick3 === 2 ? ch.effectdata & 15 : 0;
     ch.periodoffset = player.periodForNote(ch, ch.note + ofs) - ch.period;
   }
@@ -107,10 +107,26 @@ function eff_t0_7(ch, data) {  // tremolo
 }
 
 function eff_t1_7(ch) {  // tremolo
-  // FT2: (vibratoTab[pos] * depth) >> 6, table values 0-255 with delta ±1.0
-  // we need to scale by 4 to match FT2's effective range
-  ch.voloffset = getVibratoDelta(ch.tremolotype, ch.tremolopos) * ch.tremolodepth * 4;
-  // FT2 updates tremoloPos on every tick including tick 0
+  // FT2 bug: uses vibratoPos for sign instead of tremoloPos (in both
+  // the ramp waveform shape and the overall sign determination)
+  var idx = ch.tremolopos & 31;
+  var amp;
+  switch (ch.tremolotype & 3) {
+    case 1: // ramp — FT2 bug: ramp shape flipped by vibratoPos
+      amp = (idx << 3) / 256;
+      if (ch.vibratopos >= 32) amp = ((255 - (idx << 3)) & 0xFF) / 256;
+      break;
+    case 2:
+    case 3: // square
+      amp = 1;
+      break;
+    case 0:
+    default: // sine (half-wave lookup, always positive)
+      amp = player.vibratoSineLUT[idx];
+      break;
+  }
+  // FT2 bug: overall sign from vibratoPos (should be tremoloPos)
+  ch.voloffset = (ch.vibratopos >= 32 ? -amp : amp) * ch.tremolodepth * 4;
   ch.tremolopos += ch.tremolospeed;
   ch.tremolopos &= 63;
 }
@@ -244,9 +260,8 @@ function eff_t0_e(ch, data) {  // extended effects!
 function eff_t1_e(ch) {  // extended effects tick 1+
   switch (ch.effectdata >> 4) {
     case 9:  // retrig note
-      // FT2: countdown timing (speed - tick) % param
       if (ch.retrig_interval &&
-          (player.xm.tempo - player.cur_tick) % ch.retrig_interval === 0) {
+          player.cur_tick % ch.retrig_interval === 0) {
         var inst = ch.inst;
         if (!inst || !inst.samplemap) break;
         // FT2: triggerNote(0,0,0,ch) — crossfade + restart voice

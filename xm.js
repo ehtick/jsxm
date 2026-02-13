@@ -210,13 +210,24 @@ function setCurrentPattern() {
   player.cur_pat = nextPat;
 }
 
-// FT2 keyOff: set release flag and back up volume envelope tick by 1.
-// This ensures one extra sample of the sustain value before the envelope
-// progresses, matching FT2's exact key-off timing.
+// FT2 keyOff: set release flag, back up envelope ticks, and handle
+// immediate silence when volume envelope is disabled.
 function keyOff(ch) {
   ch.release = 1;
-  if (ch.inst && (ch.inst.env_vol.type & 1) && ch.env_vol) {
+  if (!ch.inst) return;
+
+  // FT2: if volume envelope is enabled, back up tick by 1 so the sustain
+  // value lingers one extra tick before the envelope progresses.
+  if ((ch.inst.env_vol.type & 1) && ch.env_vol) {
     if (ch.env_vol.tick > 0) ch.env_vol.tick--;
+  }
+
+  // FT2 bug: checks !(panEnvFlags & ENV_ENABLED) — backs up panning
+  // envelope tick when pan envelope is NOT enabled (logic inverted).
+  // No audible effect since the tick is unused when disabled, but
+  // reproduced here for FT2 accuracy.
+  if (!(ch.inst.env_pan.type & 1) && ch.env_pan) {
+    if (ch.env_pan.tick > 0) ch.env_pan.tick--;
   }
 }
 
@@ -432,7 +443,9 @@ function nextRow() {
         ch.voleffectfn = panSlideRight;
       } else if (v >= 0xf0 && v <= 0xff) {  // portamento
         if (v & 0x0f) {
-          ch.portaspeed = (v & 0x0f) << 4;
+          // FT2: vol column porta speed = nibble * 16 in full-scale periods
+          // (v_PortamentoStore overwrites the (param<<4)*4 from getNewNote)
+          ch.portaspeed = (v & 0x0f) * 4;
         }
         ch.voleffectfn = player.effects_t1[3];  // just run 3x0
       }
