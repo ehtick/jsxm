@@ -437,10 +437,13 @@ function eff_t1_t(ch) {  // tremor
 }
 
 function eff_t0_l(ch, data) {  // set envelope position
-  if (ch.env_vol) {
+  // FT2: only set volume envelope position if volume envelope is enabled
+  var flags = ch.inst && ch.inst.env_vol_flags;
+  if ((flags & 1) && ch.env_vol) {
     ch.env_vol.tick = data;
   }
-  if (ch.env_pan) {
+  // FT2 bug: checks volEnvFlags & ENV_SUSTAIN, not panEnvFlags & ENV_ENABLED
+  if ((flags & 2) && ch.env_pan) {
     ch.env_pan.tick = data;
   }
 }

@@ -1173,6 +1173,7 @@ function load(arrayBuf) {
       inst.samplemap = samplemap;
       inst.samples = samps;
       inst.vol_fadeout = vol_fadeout;
+      inst.env_vol_flags = env_vol_type;  // original file flags for Lxx FT2 bug
       inst.vib_type = vib_type;
       inst.vib_sweep = vib_sweep;
       inst.vib_depth = vib_depth;
