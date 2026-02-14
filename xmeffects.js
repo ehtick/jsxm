@@ -9,6 +9,11 @@ function eff_t1_0(ch) {  // arpeggio
     // FT2 indexes arpeggioTab with countdown tick; equivalent to (tempo - tick) % 3
     var tick3 = (player.xm.tempo - player.cur_tick) % 3;
     var ofs = tick3 === 1 ? ch.effectdata >> 4 : tick3 === 2 ? ch.effectdata & 15 : 0;
+    // TODO: FT2 uses period2NotePeriod(ch.realPeriod, noteOffset, ch) which resolves
+    // from the CURRENT period (may have been shifted by portamento), not from the
+    // original note. This matters when arpeggio and portamento interact.
+    // Also: at tempo > 16, FT2's arpeggioTab overflows into unrelated binary data
+    // producing undefined behavior; our %3 always gives clean results (minor difference).
     ch.periodoffset = player.periodForNote(ch, ch.note + ofs) - ch.period;
   }
 }
@@ -53,6 +58,10 @@ function eff_t1_3(ch) {  // portamento
       ch.period = Math.min(ch.periodtarget, ch.period + ch.portaspeed);
     }
     if (ch.glissando) {
+      // TODO: Broken in Amiga mode. Rounding to 16 period units assumes linear
+      // periods where each semitone = 16 units. In Amiga mode, semitones are not
+      // equally spaced. FT2 uses period2NotePeriod(realPeriod, 0, ch) to snap to
+      // the nearest note period via binary search in amigaPeriodLUT.
       // round to nearest semitone (16 period units per semitone)
       ch.periodoffset = Math.round(ch.period / 16) * 16 - ch.period;
     }
@@ -313,18 +322,19 @@ function eff_t0_g(ch, data) {  // set global volume
 function eff_t0_h(ch, data) {  // global volume slide
   if (data) {
     // FT2: high nibble takes priority (same rule as Axy), multiplied by 2
+    // FT2: memory is per-channel (ch->globVolSlideSpeed)
     if (data & 0xf0) {
-      player.xm.global_volumeslide = (data >> 4) * 2;
+      ch.globalvolumeslide = (data >> 4) * 2;
     } else {
-      player.xm.global_volumeslide = -(data & 0x0f) * 2;
+      ch.globalvolumeslide = -(data & 0x0f) * 2;
     }
   }
 }
 
 function eff_t1_h(ch) {  // global volume slide
-  if (player.xm.global_volumeslide !== undefined) {
+  if (ch.globalvolumeslide !== undefined) {
     player.xm.global_volume = Math.max(0, Math.min(player.max_global_volume,
-      player.xm.global_volume + player.xm.global_volumeslide));
+      player.xm.global_volume + ch.globalvolumeslide));
   }
 }
 

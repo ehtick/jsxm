@@ -108,12 +108,24 @@ function updateChannelPeriod(ch, period) {
   if (period <= 0) return;
   var freq;
   if (player.xm.flags & 1) {
+    // TODO: FT2 quirk: uses ((12*192*4) - period) & 0xFFFF before log-table lookup,
+    // causing uint16 overflow for extreme low periods (pitch-slid far down). Our
+    // Math.pow formula naturally produces near-zero frequencies instead of wrapping.
     freq = 8363 * Math.pow(2, (1152.0 - period) / 192.0);
   } else {
-    freq = 3583964 / period;
+    freq = 3579364 / period;  // 8363*1712/4, FT2's Amiga period constant in 1/4-scale
   }
   ch.doff = freq / f_smp;
 }
+
+// TODO: Missing period2NotePeriod() — FT2's binary search function (ft2_replayer.c:1758)
+// that maps a period back to the nearest note period. Needed for:
+//   1. Arpeggio: FT2 resolves from current period (may be shifted by portamento),
+//      not from the original note. Uses period2NotePeriod(realPeriod, noteOffset, ch).
+//   2. Glissando (E3x): FT2 snaps portamento to semitones using
+//      period2NotePeriod(realPeriod, 0, ch). In Amiga mode this requires binary
+//      search in amigaPeriodLUT (semitones are not equally spaced).
+// In linear mode it could use simple math; in Amiga mode it needs the LUT binary search.
 
 function periodForNote(ch, note) {
   if (player.xm.flags & 1) {
