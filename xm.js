@@ -923,6 +923,13 @@ function audio_cb(e) {
     player.cur_ticksamp += tickduration;
     buflen -= tickduration;
   }
+  // post-mix normalization (like FT2's fAudioNormalizeMul)
+  var amp = amplification;
+  var len = e.outputBuffer.length;
+  for (i = 0; i < len; i++) {
+    dataL[i] *= amp;
+    dataR[i] *= amp;
+  }
 }
 
 function ConvertSample(array, bits) {
@@ -1228,14 +1235,13 @@ function load(arrayBuf) {
   return true;
 }
 
-var jsNode, gainNode;
+var jsNode;
+var amplification = 0.5;  // post-mix normalization
 var iosUnlocked = false;
 function init() {
   if (!player.audioctx) {
     var audioContext = window.AudioContext || window.webkitAudioContext;
     player.audioctx = new audioContext();
-    gainNode = player.audioctx.createGain();
-    gainNode.gain.value = 0.1;  // master volume
   }
   // compute quickRampSamples once from actual sample rate
   f_smp = player.audioctx.sampleRate;
@@ -1247,9 +1253,9 @@ function init() {
     jsNode = player.audioctx.createScriptProcessor(16384, 0, 2);
   }
   jsNode.onaudioprocess = audio_cb;
-  gainNode.connect(player.audioctx.destination);
-  player.gainNode = gainNode;
 }
+
+player.setAmplification = function(v) { amplification = v; };
 
 player.playing = false;
 function play() {
@@ -1257,7 +1263,7 @@ function play() {
     // put paused events back into action, if any
     if (XMView.resume) XMView.resume();
     // start playing
-    jsNode.connect(gainNode);
+    jsNode.connect(player.audioctx.destination);
 
     // hack to get iOS to play anything (run only once)
     if (!iosUnlocked) {
@@ -1274,7 +1280,7 @@ function play() {
 
 function pause() {
   if (player.playing) {
-    jsNode.disconnect(gainNode);
+    jsNode.disconnect(player.audioctx.destination);
     if (XMView.pause) XMView.pause();
   }
   player.playing = false;
@@ -1282,7 +1288,7 @@ function pause() {
 
 function stop() {
   if (player.playing) {
-    jsNode.disconnect(gainNode);
+    jsNode.disconnect(player.audioctx.destination);
     player.playing = false;
   }
   player.cur_pat = -1;
