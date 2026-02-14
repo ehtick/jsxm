@@ -473,8 +473,6 @@ function eff_t1_k(ch) {  // key off at tick
   }
 }
 
-function eff_unimplemented() {}
-
 player.effects_t0 = [  // effect functions on tick 0
   null,  // 0, arpeggio does nothing on tick 0 (FT2: dummy)
   eff_t0_1,
@@ -494,24 +492,24 @@ player.effects_t0 = [  // effect functions on tick 0
   eff_t0_f,  // f
   eff_t0_g,  // g
   eff_t0_h,  // h
-  eff_unimplemented,  // i
-  eff_unimplemented,  // j
+  null,  // i
+  null,  // j
   eff_t0_k,  // k
   eff_t0_l,  // l
-  eff_unimplemented,  // m
-  eff_unimplemented,  // n
-  eff_unimplemented,  // o
+  null,  // m
+  null,  // n
+  null,  // o
   eff_t0_p,  // p
-  eff_unimplemented,  // q
+  null,  // q
   eff_t0_r,  // r
-  eff_unimplemented,  // s
+  null,  // s
   eff_t0_t,  // t
-  eff_unimplemented,  // u
-  eff_unimplemented,  // v
-  eff_unimplemented,  // w
+  null,  // u
+  null,  // v
+  null,  // w
   eff_t0_x,  // x
-  eff_unimplemented,  // y
-  eff_unimplemented,  // z
+  null,  // y
+  null,  // z
 ];
 
 player.effects_t1 = [  // effect functions on tick 1+
@@ -533,24 +531,24 @@ player.effects_t1 = [  // effect functions on tick 1+
   null,   // f
   null,  // g
   eff_t1_h,  // h
-  eff_unimplemented,  // i
-  eff_unimplemented,  // j
+  null,  // i
+  null,  // j
   eff_t1_k,  // k
   null,  // l
-  eff_unimplemented,  // m
-  eff_unimplemented,  // n
-  eff_unimplemented,  // o
+  null,  // m
+  null,  // n
+  null,  // o
   eff_t1_p,  // p
-  eff_unimplemented,  // q
+  null,  // q
   eff_t1_r,  // r
-  eff_unimplemented,  // s
+  null,  // s
   eff_t1_t,  // t
-  eff_unimplemented,  // u
-  eff_unimplemented,  // v
-  eff_unimplemented,  // w
-  eff_unimplemented,  // x
-  eff_unimplemented,  // y
-  eff_unimplemented   // z
+  null,  // u
+  null,  // v
+  null,  // w
+  null,  // x
+  null,  // y
+  null   // z
 ];
 
 })(window);

@@ -31,11 +31,6 @@ player.Envelope = Envelope;
 player.EnvelopeFollower = EnvelopeFollower;
 player.keyOff = keyOff;
 
-// for pretty-printing notes
-var _note_names = [
-  "C-", "C#", "D-", "D#", "E-", "F-",
-  "F#", "G-", "G#", "A-", "A#", "B-"];
-
 var f_smp = 44100;  // updated by play callback, default value here
 
 var quickRampSamples = Math.max(1, Math.round(f_smp / 200));  // ~5ms crossfade
@@ -45,34 +40,11 @@ player.quickRampSamples = quickRampSamples;
 var vuBuffer = null;
 var scopeBuffers = null;
 
-function prettify_note(note) {
-  if (note < 0) return "---";
-  if (note == 96) return "^^^";
-  return _note_names[note%12] + ~~(note/12);
-}
-
-function prettify_number(num) {
-  if (num == -1) return "--";
-  if (num < 10) return "0" + num;
-  return num;
-}
-
-function prettify_volume(num) {
-  if (num < 0x10) return "--";
-  return num.toString(16);
-}
-
 function prettify_effect(t, p) {
   if (t >= 10) t = String.fromCharCode(55 + t);
   if (p < 16) p = '0' + p.toString(16);
   else p = p.toString(16);
   return t + p;
-}
-
-function prettify_notedata(data) {
-  return (prettify_note(data[0]) + " " + prettify_number(data[1]) + " " +
-      prettify_volume(data[2]) + " " +
-      prettify_effect(data[3], data[4]));
 }
 
 function getstring(dv, offset, len) {
@@ -197,7 +169,7 @@ function setCurrentPattern() {
       player.cur_songpos++;
     } else if ((player.cur_songpos === player.xm.song_looppos && player.cur_songpos !== 0)
       || player.xm.song_looppos >= player.xm.songpats.length) {
-      // if we allready tried song_looppos or if song_looppos
+      // if we already tried song_looppos or if song_looppos
       // is out of range, go to the first position
       player.cur_songpos = 0;
     } else {
@@ -878,7 +850,7 @@ function audio_cb(e) {
 
   while(buflen > 0) {
     if (player.cur_pat == -1 || player.cur_ticksamp >= ticklen) {
-      nextTick(f_smp);
+      nextTick();
       player.cur_ticksamp -= ticklen;
       ticklen = f_smp * 2.5 / player.xm.bpm;  // recalculate after possible Fxx BPM change
     }
@@ -903,7 +875,7 @@ function audio_cb(e) {
       }
 
       if (captureScopes) {
-        var scope = scopeBuffers[j];
+        scope = scopeBuffers[j];
         for (k = 0; k < scopewidth; k++) {
           scope[k] += dataL[offset+k*4] + dataR[offset+k*4];
         }
@@ -1047,7 +1019,7 @@ function load(arrayBuf) {
   player.xm.patterns = [];
   for (i = 0; i < npat; i++) {
     var pattern = [];
-    var patheaderlen = dv.getUint32(idx, true);
+    dv.getUint32(idx, true);  // pattern header length (unused)
     var patrows = dv.getUint16(idx + 5, true);
     var patsize = dv.getUint16(idx + 7, true);
     idx += 9;
@@ -1159,7 +1131,7 @@ function load(arrayBuf) {
           samptype &= ~3;
         }
         var samp = {
-          'len': samplen, 'loop': samploop,
+          'name': sampname, 'len': samplen, 'loop': samploop,
           'looplen': samplooplen, 'note': sampnote, 'fine': sampfinetune,
           'pan': samppan, 'type': samptype, 'vol': sampvol,
           'fileoffset': sampleoffset
@@ -1247,11 +1219,7 @@ function init() {
   f_smp = player.audioctx.sampleRate;
   quickRampSamples = Math.max(1, Math.round(f_smp / 200));
   player.quickRampSamples = quickRampSamples;
-  if (player.audioctx.createScriptProcessor === undefined) {
-    jsNode = player.audioctx.createJavaScriptNode(16384, 0, 2);
-  } else {
-    jsNode = player.audioctx.createScriptProcessor(16384, 0, 2);
-  }
+  jsNode = player.audioctx.createScriptProcessor(16384, 0, 2);
   jsNode.onaudioprocess = audio_cb;
 }
 
@@ -1270,8 +1238,8 @@ function play() {
       iosUnlocked = true;
       var temp_osc = player.audioctx.createOscillator();
       temp_osc.connect(player.audioctx.destination);
-      !!temp_osc.start ? temp_osc.start(0) : temp_osc.noteOn(0);
-      !!temp_osc.stop ? temp_osc.stop(0) : temp_osc.noteOff(0);
+      temp_osc.start(0);
+      temp_osc.stop(0);
       temp_osc.disconnect();
     }
   }
